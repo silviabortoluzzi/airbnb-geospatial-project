@@ -1,0 +1,26 @@
+# Geospatial Analysis - Trentino Airbnb Project
+# Based on course materials from geospatialcourse2025
+
+# Core geospatial libraries
+geopandas==1.1.0
+osmnx==1.9.4
+
+# Data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Geospatial dependencies (installed automatically but listed for reference)
+shapely>=2.0.0
+fiona>=1.9.0
+pyproj>=3.5.0
+rtree>=1.0.0
+
+# Network analysis
+networkx>=3.0
+
+# Visualization
+matplotlib>=3.7.0
+mapclassify==2.9.0
+
+# Utilities
+requests>=2.31.0
