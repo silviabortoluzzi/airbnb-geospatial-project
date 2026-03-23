@@ -6,9 +6,15 @@
 # SETUP & LIBRARIES
 rm(list = ls())
 
-#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-# setwd("..")
+# Check current working directory
+print(paste("Current working directory:", getwd()))
+
+# Set working directory to project root
+# Adjust the path to your system
 setwd("C:/Users/borto/Desktop/unitn/geospatial/geospatial-project")
+
+# Verify
+print(paste("New working directory:", getwd()))
 
 # Now load data
 df <- read.csv("datasets/trentino_listings_maps.csv")
@@ -27,29 +33,14 @@ ensure_package("dplyr")
 print("--- LIBRARIES LOADED SUCCESSFULLY ---")
 
 # =============================================================================
-# DATA CLEANING (collapse shared rooms)
-# =============================================================================
-
-cat("\n--- DATA CLEANING: Handling Rare Categories ---\n")
-table_original <- table(df$room_type)
-cat("Original room_type:\n"); print(table_original)
-
-df$room_type_clean <- ifelse(df$room_type == "Shared room", 
-                               "Private room", as.character(df$room_type))
-
-table_cleaned <- table(df$room_type_clean)
-cat("Cleaned (Shared→Private):\n"); print(table_cleaned); cat("\n")
-
-# =============================================================================
 # DATA LOADING & PREPARATION
 # =============================================================================
 
-periods <- unique(df$period)
-results <- list()
-
-# Convert categorical variables
-df$room_type_clean <- as.factor(df$room_type_clean)
-df$host_is_superhost <- as.factor(df$host_is_superhost)
+# Convert categorical variables into explicit numerical dummies
+# "Entire home/apt" is kept as the baseline reference category to avoid multicollinearity
+df$is_private_room <- ifelse(df$room_type == "Private room", 1, 0)
+df$is_shared_room <- ifelse(df$room_type == "Shared room", 1, 0)
+df$is_hotel_room <- ifelse(df$room_type == "Hotel room", 1, 0)
 
 # Rescale distances from meters to kilometers
 # (Section 4.4: Interpretation as "% price change per 1 km")
@@ -58,405 +49,448 @@ for(v in vars_dist) {
   df[[v]] <- df[[v]] / 1000
 }
 
+df <- na.omit(df)
+
+# Filter for december period only
+df <- df[df$period == "december", ]
+print(paste("Data Loaded. After december filter:", nrow(df), "observations"))
+
 # =============================================================================
 # THEORY-BASED MODEL SPECIFICATION (Section 4.1-4.4)
 # =============================================================================
-for (quadrimester in periods) {
-  print(paste("ANALYZING PERIOD:", quadrimester, "\n"))
 
-  print("--- STEP 1: THEORETICALLY-DRIVEN VARIABLE SELECTION ---")
-  print("Theoretical Framework: Hedonic Pricing + Spatial Dependence")
-  print("References: Rosen (1974), Tobler, Elhorst (2010), Torres-Luque (2025)")
+print("--- STEP 1: THEORETICALLY-DRIVEN VARIABLE SELECTION ---")
+print("Theoretical Framework: Hedonic Pricing + Spatial Dependence")
+print("References: Rosen (1974), Tobler, Elhorst (2010), Torres-Luque (2025)")
 
-  # Core Model based on Literature Review (Section 2.1-2.3)
-  model_ols <- lm(log_price ~ 
-                  # Structural (Section 4.1)
-                  room_type_clean + accommodates + bathrooms + 
-                  
-                  # Reputational (Section 4.2)
-                  n_reviews + review_scores_rating + host_is_superhost +
-                  
-                  # Locational (Section 4.4) - Refined to 4 key distances
-                  # Alpine: Ski-Lift Premium (Guest Favorites)
-                  dist_ski + 
-                  
-                  # Lacustrine: Shoreline Premium (Garda studies)
-                  dist_lake + 
-                  
-                  # Urban: Monocentricity (Alonso)
-                  dist_center + 
-                  
-                  # Services: Agglomeration Economies (Section 2.1)
-                  dist_restaurant +
-                  
-                  # Policy variables
-                  availability_365 + minimum_nights,
-                  
-                  data = df)
+# Core Model based on Literature Review (Section 2.1-2.3)
+model_ols <- lm(log_price ~ 
+                # Structural (Section 4.1)
+                is_private_room + is_shared_room + is_hotel_room + accommodates + 
+                
+                # Reputational (Section 4.2)
+                n_reviews + 
+                
+                # Locational (Section 4.4)
+                # Urban: Monocentricity (Alonso)
+                dist_center + 
+                
+                # Alpine: Ski-Lift Premium (Guest Favorites)
+                dist_ski + 
+                
+                # Lacustrine: Shoreline Premium (Garda studies)
+                dist_lake + 
+                
+                # Cultural: Micro-centralities (Guarini 2026, Smart Cities 2023)
+                dist_castle + dist_museum +
+                
+                # Services: Agglomeration Economies (Section 2.1)
+                dist_restaurant + dist_supermarket,
+                
+                data = df)
 
-  print("--- OLS BASELINE MODEL SUMMARY ---")
-  summary(model_ols)
+print("--- OLS BASELINE MODEL SUMMARY ---")
+summary(model_ols)
 
-  # Residual diagnostics
-  par(mfrow=c(2,2))
-  plot(model_ols, main="OLS Residual Diagnostics")
-  par(mfrow=c(1,1))
+# Residual diagnostics
+par(mfrow=c(2,2))
+plot(model_ols, main="OLS Residual Diagnostics")
+par(mfrow=c(1,1))
 
-  # =============================================================================
-  # SPATIAL WEIGHTS MATRIX (Section 3.2)
-  # =============================================================================
+# =============================================================================
+# SPATIAL WEIGHTS MATRIX (Section 3.2)
+# =============================================================================
 
-  print("--- STEP 2: CREATING SPATIAL WEIGHTS MATRIX (KNN) ---")
-  print("Justification: Adaptive to variable density (Section 3.2)")
+print("--- STEP 2: CREATING SPATIAL WEIGHTS MATRIX (KNN) ---")
+print("Justification: Adaptive to variable density (Section 3.2)")
 
-  k <- 15  # Section 3.2: Justified range 10-20, optimal at k=15
-  coords <- cbind(df$long, df$lat)
+k <- 15  # Section 3.2: Justified range 10-20, optimal at k=15
+coords <- cbind(df$long, df$lat)
 
-  # Check for duplicate coordinates
-  coords_df <- as.data.frame(coords)
-  n_duplicates <- sum(duplicated(coords_df))
-  pct_duplicates <- round(n_duplicates/nrow(df)*100, 2)
+# Check for duplicate coordinates
+coords_df <- as.data.frame(coords)
+n_duplicates <- sum(duplicated(coords_df))
+pct_duplicates <- round(n_duplicates/nrow(df)*100, 2)
 
-  print(paste("Duplicate coordinates found:", n_duplicates, "(", pct_duplicates, "%)"))
+print(paste("Duplicate coordinates found:", n_duplicates, "(", pct_duplicates, "%)"))
 
-  # L'analisi ha rilevato che 454 osservazioni (5.93%) presentavano coordinate duplicate rispetto a osservazioni precedenti nel dataset, per un totale di 697 listings (9.1%) coinvolte in gruppi di duplicazione. 
-  # Questo pattern è attribuibile alla pratica di Airbnb di applicare offset sistematici per privacy e alla presenza di edifici multi-unità.
+# The analysis detected 454 observations (5.93%) with duplicated coordinates compared to previous observations, for a total of 697 listings (9.1%) involved in duplicate groups. 
+# This pattern is attributable to Airbnb's practice of applying systematic offsets for privacy and the presence of multi-unit buildings.
 
-  # JITTERING: Add small random noise if duplicates > 5%
-  if (pct_duplicates > 5) {
-    print("--- APPLYING JITTERING (duplicate threshold exceeded) ---")
-    set.seed(42)  # Reproducibility
-    
-    # Add ~15m random noise (appropriate for privacy-shifted Airbnb data)
-    df$long_jitter <- df$long + rnorm(nrow(df), 0, 0.00015)
-    df$lat_jitter <- df$lat + rnorm(nrow(df), 0, 0.00015)
-    
-    coords_final <- cbind(df$long_jitter, df$lat_jitter)
-    
-    # Verify uniqueness
-    n_unique_after <- nrow(unique(as.data.frame(coords_final)))
-    print(paste("Unique coordinates after jittering:", n_unique_after, "/", nrow(df)))
-    
-  } else {
-    coords_final <- coords
-    print("No jittering needed (duplicates < 5%)")
-  }
+# JITTERING: Add small random noise if duplicates > 5%
+if (pct_duplicates > 5) {
+  print("--- APPLYING JITTERING (duplicate threshold exceeded) ---")
+  set.seed(42)  # Reproducibility
+  
+  # Add ~15m random noise (appropriate for privacy-shifted Airbnb data)
+  df$long_jitter <- df$long + rnorm(nrow(df), 0, 0.00015)
+  df$lat_jitter <- df$lat + rnorm(nrow(df), 0, 0.00015)
+  
+  coords_final <- cbind(df$long_jitter, df$lat_jitter)
+  
+  # Verify uniqueness
+  n_unique_after <- nrow(unique(as.data.frame(coords_final)))
+  print(paste("Unique coordinates after jittering:", n_unique_after, "/", nrow(df)))
+  
+} else {
+  coords_final <- coords
+  print("No jittering needed (duplicates < 5%)")
+}
 
-  # Create spatial weights with cleaned coordinates
-  knn <- knearneigh(coords_final, k = k)
-  nb <- knn2nb(knn)
-  listw <- nb2listw(nb, style = "W")  # Row-standardized
+# Create spatial weights with cleaned coordinates
+knn <- knearneigh(coords_final, k = k)
+nb <- knn2nb(knn)
+listw <- nb2listw(nb, style = "W")  # Row-standardized
 
-  print(paste("Spatial Weights Matrix created: k =", k, "(Section 3.2)"))
+print(paste("Spatial Weights Matrix created: k =", k, "(Section 3.2)"))
 
-  # =============================================================================
-  # SPATIAL DIAGNOSTICS (Section 3.1)
-  # =============================================================================
+# =============================================================================
+# SPATIAL DIAGNOSTICS (Section 3.1)
+# =============================================================================
 
-  print("--- STEP 3: SPATIAL AUTOCORRELATION TESTS ---")
+print("--- STEP 3: SPATIAL AUTOCORRELATION TESTS ---")
 
-  # Moran's I on Dependent Variable
-  print("--- Moran's I Test on log_price (Global Autocorrelation) ---")
-  moran_price <- moran.test(df$log_price, listw)
-  print(moran_price)
+# Moran's I on Dependent Variable
+print("--- Moran's I Test on log_price (Global Autocorrelation) ---")
+moran_price <- moran.test(df$log_price, listw)
+print(moran_price)
 
-  # Moran Scatterplot
-  moran.plot(df$log_price, listw, labels=FALSE, 
-            xlab="Log Price", 
-            ylab="Spatially Lagged Log Price",
-            main="Moran Scatterplot - Spatial Clustering")
+# Moran Scatterplot
+moran.plot(df$log_price, listw, labels=FALSE, 
+           xlab="Log Price", 
+           ylab="Spatially Lagged Log Price",
+           main="Moran Scatterplot - Spatial Clustering")
 
-  # Moran's I on OLS Residuals (Section 3.1)
-  print("--- Moran's I Test on OLS Residuals ---")
-  print("H0: No spatial autocorrelation (independent residuals)")
-  print("H1: Spatial autocorrelation exists (OLS is biased)")
-  moran_test <- lm.morantest(model_ols, listw)
-  print(moran_test)
+# Moran's I on OLS Residuals (Section 3.1)
+print("--- Moran's I Test on OLS Residuals ---")
+print("H0: No spatial autocorrelation (independent residuals)")
+print("H1: Spatial autocorrelation exists (OLS is biased)")
+moran_test <- lm.morantest(model_ols, listw)
+print(moran_test)
 
-  if (moran_test$p.value < 0.05) {
-    print("RESULT: Spatial autocorrelation detected (p < 0.05)")
-    print("IMPLICATION: OLS estimates are inefficient/biased")
-    print("ACTION: Proceed with Spatial Regression Models (Section 3.3)")
-  } else {
-    print("RESULT: No significant spatial autocorrelation")
-    print("NOTE: This is rare in real estate data")
-  }
+if (moran_test$p.value < 0.05) {
+  print("RESULT: Spatial autocorrelation detected (p < 0.05)")
+  print("IMPLICATION: OLS estimates are inefficient/biased")
+  print("ACTION: Proceed with Spatial Regression Models (Section 3.3)")
+} else {
+  print("RESULT: No significant spatial autocorrelation")
+  print("NOTE: This is rare in real estate data")
+}
 
-  # Lagrange Multiplier Tests (Elhorst Strategy - Section 3.3)
-  print("--- Lagrange Multiplier Tests (Model Selection) ---")
-  lm_tests <- lm.LMtests(model_ols, listw, test = "all")
-  print(lm_tests)
+# Lagrange Multiplier Tests (Elhorst Strategy - Section 3.3)
+print("--- STEP 1: Lagrange Multiplier Tests (Elhorst 2010) ---")
+lm_tests <- lm.RStests(model_ols, listw, test = "all")
+print(lm_tests)
 
-  # Interpretation Guide (FIXED for new syntax)
-  p_lag <- lm_tests$RSlag$p.value
-  p_err <- lm_tests$RSerr$p.value
+# Extract p-values (RS tests = Rao's Score, equivalent to LM)
+p_lag <- lm_tests$RSlag$p.value
+p_err <- lm_tests$RSerr$p.value
+p_rlag <- lm_tests$adjRSlag$p.value  # Robust LM-lag
+p_rerr <- lm_tests$adjRSerr$p.value  # Robust LM-err
 
-  print("--- MODEL SELECTION ADVICE (Elhorst 2010) ---")
-  print(paste("LM-Lag p-value:", p_lag))
-  print(paste("LM-Error p-value:", p_err))
+print("--- Elhorst (2010) Model Selection Strategy ---")
+print(paste("RS-lag p-value:", round(p_lag, 4)))
+print(paste("RS-err p-value:", round(p_err, 4)))
+print(paste("Robust RS-lag p-value:", round(p_rlag, 4)))
+print(paste("Robust RS-err p-value:", round(p_rerr, 4)))
 
-  if (p_lag < 0.05 & p_err < 0.05) {
-    print("Both LM-Lag and LM-Error significant -> Estimate SDM (most general)")
-    model_choice <- "SDM"
-  } else if (p_lag < 0.05) {
-    print("Only LM-Lag significant -> Estimate SAR (price spillover)")
-    model_choice <- "SAR"
-  } else if (p_err < 0.05) {
-    print("Only LM-Error significant -> Estimate SEM (error spillover)")
-    model_choice <- "SEM"
-  } else {
-    print("Neither significant -> OLS sufficient (unlikely)")
-    model_choice <- "OLS"
-  }
+# =============================================================================
+# SPATIAL MODEL ESTIMATION (Elhorst 2010 - 7 Step Strategy)
+# =============================================================================
 
-  # =============================================================================
-  # SPATIAL MODEL ESTIMATION (Section 3.3 - Elhorst Strategy)
-  # =============================================================================
+print("--- STEP 2: ESTIMATING SPATIAL MODELS ---")
 
-  print("--- STEP 4: ESTIMATING SPATIAL REGRESSION MODELS ---")
-  formula_final <- formula(model_ols)
+formula_final <- formula(model_ols)
 
-  # SAR Model
+# Create a specific Durbin formula to avoid lagging absolute distances.
+# Lagging distance variables (like dist_center) on KNN neighbors creates near-perfect 
+# multicollinearity, as neighbors share almost identical distances.
+durbin_vars <- ~ is_private_room + is_shared_room + is_hotel_room + accommodates + n_reviews
+
+# Let's save/load heavy models to avoid recompiling every time
+models_file <- "results/spatial_models_december.RData"
+
+if (file.exists(models_file)) {
+  print("Found pre-computed models! Loading them from disk to save time...")
+  load(models_file)
+} else {
+  print("No pre-computed models found. Estimating models (this might take a while)...")
+
+  # Always estimate SAR, SEM, and SLX for comparison
   print("Estimating SAR (Spatial Lag Model)...")
-
-  model_sar <- lagsarlm(formula_final, data = df, listw = listw, 
-                        method = "LU", quiet = FALSE)
-
-  print(summary(model_sar, Nagelkerke = TRUE))
-
-
-  # # SDM Model 
-  # if (model_choice == "SDM") {
-  #   print("Estimating SDM (Spatial Durbin Model)...")
-  #   model_sdm <- lagsarlm(formula_final, data = df, listw = listw, 
-  #                         Durbin = TRUE, 
-  #                         method = "LU") 
-  #   print("--- SDM MODEL RESULTS ---")
-  #   print(summary(model_sdm, Nagelkerke = TRUE))
-  # }
-
-  # SDM Model con Durbin selettivo (prima dava nan e  Fare il lag spaziale di una variabile categorica non ha senso teoric)
-  # Verifica correlazione tra variabili di distanza
-  # dist_vars <- c("dist_center", "dist_ski", "dist_lake", "dist_castle", 
-  #                "dist_museum", "dist_restaurant", "dist_supermarket")
-  # cor_matrix <- cor(df[, dist_vars])
-  # print(round(cor_matrix, 2))
-  # Rimuovi quelle con r > 0.7
-
-
-  if (model_choice == "SDM") {
-    print("Estimating SDM with Selective Durbin...")
-    print("Variables with WX (spatial lag): accommodates, bathrooms, n_reviews, availability_365")
-    print("Variables WITHOUT WX: room_type_clean, host_is_superhost, all distances")
-    print("Rationale: Only intrinsic property characteristics have spillover effects")
-    
-    # Selective Durbin: only structural/reputation continuous variables
-    durbin_formula <- ~ accommodates + bathrooms + n_reviews + availability_365
-    
+  model_sar <- lagsarlm(formula_final, data = df, listw = listw)
+  
+  print("Estimating SEM (Spatial Error Model)...")
+  model_sem <- errorsarlm(formula_final, data = df, listw = listw)
+  
+  print("Estimating SLX (Spatially Lagged X Model)...")
+  model_slx <- lmSLX(formula_final, data = df, listw = listw, Durbin = durbin_vars)
+  
+  # STEP 2: Estimate SDM if LM tests reject OLS
+  if (p_lag < 0.05 | p_err < 0.05) {
+    print("OLS rejected by LM tests → Estimating SDM (most general model)...")
     model_sdm <- lagsarlm(formula_final, data = df, listw = listw, 
-                          Durbin = durbin_formula,
-                          method = "LU") 
-    
-    print(summary(model_sdm, Nagelkerke = TRUE))
+                          Durbin = durbin_vars)
+    estimate_sdm <- TRUE
+  } else {
+    print("OLS not rejected → SDM not needed, will test SLX at Step 7")
+    model_sdm <- NULL
+    estimate_sdm <- FALSE
+  }
+  
+  # Estimate SDEM preemptively if SEM is likely to be chosen (for complete caching)
+  # This avoids breaking the load/save logic down the script
+  model_sdem <- NULL
+  if (estimate_sdm) {
+    print("Estimating SDEM (Spatial Durbin Error Model) for potential Step 6...")
+    model_sdem <- errorsarlm(formula_final, data = df, listw = listw,
+                             Durbin = durbin_vars)
   }
 
-
-
-  # SEM Model
-  print("Estimating SEM (Spatial Error Model)...")
-
-  model_sem <- errorsarlm(formula_final, data = df, listw = listw, method = "LU")  # Rimuovi method="spam"
-
-  print(summary(model_sem, Nagelkerke = TRUE))
-
-  # =============================================================================
-  # IMPACTS CALCULATION (Section 5 - Spillover Effects)
-  # =============================================================================
-
-  # Dopo aver stimato tutti i modelli (SAR, SDM, SEM)
-  # Confronta AIC e calcola impacts solo per il migliore
-
-  print("--- MODEL COMPARISON (AIC) ---")
-  aic_ols <- AIC(model_ols)
-  aic_sar <- AIC(model_sar)
-  aic_sem <- AIC(model_sem)
-  aic_sdm <- AIC(model_sdm) 
-
-  print(paste("AIC values - OLS:", aic_ols, "SAR:", aic_sar, "SEM:", aic_sem, "SDM:", aic_sdm))
-  best_model_name= which.min(c(aic_ols, aic_sar, aic_sem, aic_sdm))
-  best_model_name <- c("OLS", "SAR", "SEM", "SDM")[best_model_name]
-  print(paste("Best Model (Lowest AIC):", best_model_name))
-
-  # Calcola impacts SOLO per il migliore
-  # if (best_model_name == "SAR") {
-  #   print("--- CALCULATING IMPACTS (SAR) ---")
-  #   imp <- impacts(model_sar, listw = listw, R = 100)
-  #   print(summary(imp, zstats = TRUE, short = TRUE))
-  # } else if (best_model_name == "SDM") {
-  #   print("--- CALCULATING IMPACTS (SDM) ---")
-  #   imp <- impacts(model_sdm, listw = listw, R = 100)
-  #   print(summary(imp, zstats = TRUE, short = TRUE))
-  # }
-  # SEM non ha impacts (no spatial lag)
-
-  # Calculate impacts for SAR and SDM for comparison
-  print("--- IMPACTS CALCULATION (Direct, Indirect, Total Effects) ---")
-  print("Note: Trace calculation handled internally (may take 10-20 seconds per model)")
-
-  print("\nCalculating Impacts for SAR...")
-  imp_sar <- impacts(model_sar, R = 100)
-  print(summary(imp_sar, zstats = TRUE, short = TRUE))
-
-  print("\nCalculating Impacts for SDM...")
-  imp_sdm <- impacts(model_sdm, R = 100)
-  print(summary(imp_sdm, zstats = TRUE, short = TRUE))
-  
-  # Store results for period
-  results[[quadrimester]] <- list(
-    n_obs = nrow(df),
-    mean_price = mean(df$price),
-    median_price = median(df$price),
-    ols = model_ols,
-    sar = model_sar,
-    sdm = model_sdm,
-    sem = model_sem,
-    aic = c(OLS = aic_ols, SAR = aic_sar, SEM = aic_sem, SDM = aic_sdm),
-    best_model = best_model_name,
-    impacts_sar = imp_sar,
-    impacts_sdm = imp_sdm,
-    lm_tests = lm_tests,
-    moran_test = moran_test,
-    moran_price = moran_price
-  )
-  
-  cat("\n✓ Period", toupper(quadrimester), "completed\n")
+  print("Saving estimated models to disk for future runs...")
+  save(model_sar, model_sem, model_slx, model_sdm, model_sdem, estimate_sdm, 
+       file = models_file)
+  print("Models saved successfully!")
 }
 
 # =============================================================================
-# CROSS-PERIOD COMPARISON TABLES
+# STEPS 3-7: MODEL SELECTION (Elhorst 2010 Strategy)
 # =============================================================================
 
-cat("\n\n========================================\n")
-cat("CROSS-PERIOD COMPARISON\n")
-cat("========================================\n\n")
+print("--- STEPS 3-7: Elhorst Model Selection ---")
 
-cat("Approach: 'Two Snapshots' - Separate models for September vs December\n")
-cat("Key Hypothesis (H3): Ski proximity premium stronger in December\n\n")
+if (estimate_sdm) {
+  # STEP 3: Likelihood Ratio Tests using anova()
+  print("STEP 3: Likelihood Ratio Tests (LRT)")
+  
+  lrt_sar <- anova(model_sdm, model_sar)
+  lrt_sem <- anova(model_sdm, model_sem)
+  
+  p_sdm_sar <- lrt_sar$`p-value`[2]
+  p_sdm_sem <- lrt_sem$`p-value`[2]
+  
+  print(paste("  SDM vs SAR: LR =", round(lrt_sar$L.Ratio[2], 2), ", p =", round(p_sdm_sar, 4)))
+  print(paste("  SDM vs SEM: LR =", round(lrt_sem$L.Ratio[2], 2), ", p =", round(p_sdm_sem, 4)))
+  
+  reject_sar <- (p_sdm_sar < 0.05)
+  reject_sem <- (p_sdm_sem < 0.05)
+  
+  # STEP 4: Both restrictions rejected?
+  if (reject_sar & reject_sem) {
+    best_model_name <- "SDM"
+    best_model <- model_sdm
+    print("STEP 4: Both H0 rejected → SDM best describes data")
+    
+  # STEP 5: Only one restriction rejected
+  } else if (!reject_sar & p_rlag < p_rerr) {
+    best_model_name <- "SAR"
+    best_model <- model_sar
+    print("STEP 5: SAR restriction not rejected + RLM-lag < RLM-err → SAR preferred")
+    
+  } else if (!reject_sem & p_rerr < p_rlag) {
+    # STEP 6: Test SDEM
+    print("STEP 6: SEM restriction not rejected. Testing SDEM...")
+    # model_sdem is already estimated and loaded from cache if available
+    
+    lrt_sdem <- anova(model_sdem, model_sem)
+    p_sdem <- lrt_sdem$`p-value`[2]
+    print(paste("  SDEM vs SEM: LR =", round(lrt_sdem$L.Ratio[2], 2), ", p =", round(p_sdem, 4)))
+    
+    if (p_sdem < 0.05) {
+      best_model_name <- "SDEM"
+      best_model <- model_sdem
+      print("  WX terms significant → SDEM preferred")
+    } else {
+      best_model_name <- "SEM"
+      best_model <- model_sem
+      print("  WX terms not significant → SEM preferred")
+    }
+    
+  } else {
+    best_model_name <- "SDM"
+    best_model <- model_sdm
+    print("Ambiguous results → Defaulting to SDM (most general)")
+  }
+  
+} else {
+  # STEP 7: OLS not rejected - test SLX
+  print("STEP 7: Testing SLX vs OLS...")
+  
+  # Test if any WX coefficients are significant
+  slx_summary <- summary(model_slx)
+  wx_coefs <- grep("^lag\\.", rownames(slx_summary$coefficients), value = TRUE)
+  
+  if (length(wx_coefs) > 0) {
+    wx_pvals <- slx_summary$coefficients[wx_coefs, "Pr(>|t|)"]
+    any_significant <- any(wx_pvals < 0.05)
+    print(paste("  WX variables tested:", length(wx_pvals), "| Significant:", sum(wx_pvals < 0.05)))
+    
+    if (any_significant) {
+      best_model_name <- "SLX"
+      best_model <- model_slx
+      print("  WX terms significant → SLX preferred")
+    } else {
+      best_model_name <- "OLS"
+      best_model <- model_ols
+      print("  WX terms not significant → OLS sufficient")
+    }
+  } else {
+    best_model_name <- "OLS"
+    best_model <- model_ols
+    print("  No WX terms specified → OLS sufficient")
+  }
+}
 
-# Table 1: Sample Size & Descriptive Statistics
-cat("--- TABLE 1: Sample Size & Price Statistics by Period ---\n")
-comparison_descriptive <- data.frame(
-  Period = names(results),
-  N_Listings = sapply(results, function(x) x$n_obs),
-  Mean_Price = sapply(results, function(x) round(x$mean_price, 2)),
-  Median_Price = sapply(results, function(x) round(x$median_price, 2)),
-  Moran_I = sapply(results, function(x) round(x$moran_price$estimate["Moran I statistic"], 3)),
-  Moran_pval = sapply(results, function(x) round(x$moran_price$p.value, 4))
+print(paste("\n✓ FINAL MODEL SELECTED:", best_model_name))
+print(summary(best_model))
+
+# Model Comparison Table (AIC)
+print("--- MODEL COMPARISON (AIC) ---")
+aic_comparison <- data.frame(
+  Model = c("OLS", "SAR", "SEM", "SLX"),
+  AIC = c(AIC(model_ols), AIC(model_sar), AIC(model_sem), AIC(model_slx))
 )
-print(comparison_descriptive)
-cat("\n")
 
-# Table 2: Model Selection (AIC Comparison)
-cat("--- TABLE 2: Model Selection (AIC) by Period ---\n")
-comparison_aic <- data.frame(
-  Period = names(results),
-  Best_Model = sapply(results, function(x) x$best_model),
-  AIC_OLS = sapply(results, function(x) round(x$aic["OLS"], 1)),
-  AIC_SAR = sapply(results, function(x) round(x$aic["SAR"], 1)),
-  AIC_SEM = sapply(results, function(x) round(x$aic["SEM"], 1)),
-  AIC_SDM = sapply(results, function(x) round(x$aic["SDM"], 1))
-)
-print(comparison_aic)
-cat("\n")
+if (!is.null(model_sdm)) {
+  aic_comparison <- rbind(aic_comparison, 
+                          data.frame(Model = "SDM", AIC = AIC(model_sdm)))
+}
 
-# Table 3: dist_ski Effects Across Periods (SEASONALITY TEST)
-cat("--- TABLE 3: dist_ski Effects by Period (Seasonality Test H3) ---\n")
-cat("Expected: Negative coefficient (closer to ski = higher price), larger in December\n\n")
+if (exists("model_sdem") && !is.null(model_sdem)) {
+  aic_comparison <- rbind(aic_comparison, 
+                          data.frame(Model = "SDEM", AIC = AIC(model_sdem)))
+}
 
-comparison_ski <- data.frame(
-  Period = names(results),
-  SAR_Direct = sapply(results, function(x) {
-    imp <- summary(x$impacts_sar, zstats = TRUE)
-    round(imp$mat["dist_ski", "Direct"], 4)
-  }),
-  SAR_pval = sapply(results, function(x) {
-    imp <- summary(x$impacts_sar, zstats = TRUE)
-    round(imp$pzmat["dist_ski", "Direct"], 4)
-  }),
-  SDM_Direct = sapply(results, function(x) {
-    imp <- summary(x$impacts_sdm, zstats = TRUE)
-    round(imp$mat["dist_ski", "Direct"], 4)
-  }),
-  SDM_pval = sapply(results, function(x) {
-    imp <- summary(x$impacts_sdm, zstats = TRUE)
-    round(imp$pzmat["dist_ski", "Direct"], 4)
+aic_comparison <- aic_comparison[order(aic_comparison$AIC), ]
+print(aic_comparison)
+print(paste("Lowest AIC:", aic_comparison$Model[1]))
+
+# =============================================================================
+# IMPACTS CALCULATION (Section 5 - Spillover Effects)
+# =============================================================================
+
+print("--- CALCULATING SPATIAL IMPACTS ---")
+print("Monte Carlo simulations: R=100 draws")
+
+# Calculate impacts for best model
+best_impacts <- NULL
+
+if (best_model_name %in% c("SDM", "SAR", "SDEM")) {
+  best_impacts <- tryCatch({
+    impacts(best_model, listw = listw, R = 100)
+  }, error = function(e) {
+    print(paste("Warning: Impacts calculation failed:", e$message))
+    NULL
   })
-)
-print(comparison_ski)
+  
+  if (!is.null(best_impacts)) {
+    print("--- SPATIAL IMPACTS SUMMARY ---")
+    print("Direct: Own-property effect")
+    print("Indirect: Spillover to neighbors") 
+    print("Total: Direct + Indirect")
+    print(summary(best_impacts, zstats = TRUE, short = TRUE))
+  } else {
+    print("Impacts calculation unavailable - coefficients still valid")
+  }
+  
+} else if (best_model_name == "SLX") {
+  best_impacts <- tryCatch({
+    impacts(best_model, listw = listw)
+  }, error = function(e) {
+    print(paste("Warning: SLX impacts failed:", e$message))
+    NULL
+  })
+  
+  if (!is.null(best_impacts)) {
+    print("--- SLX IMPACTS SUMMARY ---")
+    print(summary(best_impacts, zstats = TRUE))
+  }
+  
+} else {
+  print(paste("No spatial impacts for", best_model_name, "model"))
+}
+
+# =============================================================================
+# EXPORT SUMMARY REPORT & PLOTS
+# =============================================================================
+
+print("--- EXPORTING SUMMARY REPORT AND PLOTS TO 'results/' FOLDER ---")
+
+if (!dir.exists("results")) {
+  dir.create("results")
+}
+
+# 1. TEXT REPORT
+report_file <- "results/december_summary_report.txt"
+sink(report_file)
+cat("=============================================================================\n")
+cat("SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB - DECEMBER\n")
+cat("=============================================================================\n\n")
+
+cat("1. FINAL MODEL SELECTED:", best_model_name, "\n\n")
+print(summary(best_model))
 cat("\n")
 
-# =============================================================================
-# SAVE RESULTS TO ../results FOLDER
-# =============================================================================
+cat("2. SPATIAL IMPACTS (Direct, Indirect, Total)\n\n")
+if (!is.null(best_impacts)) {
+  if (best_model_name == "SLX") {
+    print(summary(best_impacts, zstats = TRUE))
+  } else {
+    print(summary(best_impacts, zstats = TRUE, short = TRUE))
+  }
+} else {
+  cat("Impacts calculation unavailable or not applicable.\n")
+}
+cat("\n")
 
-# Create results directory if it doesn't exist
-if (!dir.exists("../results")) {
-  dir.create("../results", recursive = TRUE)
-  cat("✓ Created ../results/ directory\n")
+cat("3. MODEL COMPARISON (AIC)\n\n")
+print(aic_comparison)
+cat("\n")
+
+cat("4. MORAN'S I OLS RESIDUALS TEST\n\n")
+print(moran_test)
+
+cat("\n=============================================================================\n")
+sink()
+print(paste("✓ Summary report saved to:", report_file))
+
+# 2. DIAGNOSTIC PLOTS
+plots_file <- "results/december_diagnostic_plots.pdf"
+pdf(plots_file, width = 10, height = 8)
+
+# Baseline OLS diagnostics (4 plots)
+par(mfrow=c(2,2))
+plot(model_ols, main="OLS Model Diagnostics")
+
+# Moran Scatterplot
+par(mfrow=c(1,1))
+moran.plot(df$log_price, listw, labels=FALSE, 
+           xlab="Log Price", 
+           ylab="Spatially Lagged Log Price",
+           main="Moran Scatterplot - Spatial Clustering")
+
+# Plot Residuals of the winning model vs Fitted values
+# Best models from spatialreg store residuals and fitted.values slightly differently occasionally,
+# but usually they are accessible directly or via residuals()/fitted():
+bm_res <- residuals(best_model)
+bm_fit <- fitted(best_model)
+
+if (!is.null(bm_res) && !is.null(bm_fit)) {
+  plot(bm_fit, bm_res, 
+       xlab = "Fitted Values", ylab = "Residuals",
+       main = paste("Residuals vs Fitted (Winning Model:", best_model_name, ")"),
+       pch = 20, col = rgb(0,0,0,0.2))
+  abline(h = 0, col = "red", lty = 2, lwd = 2)
 }
 
-# Save complete R object
-save(results, file = "../results/multi_period_analysis.RData")
-cat("✓ Results saved to: ../results/multi_period_analysis.RData\n\n")
+dev.off()
+print(paste("✓ Diagnostic plots saved to:", plots_file))
 
-# Export comparison tables to CSV
-write.csv(comparison_descriptive, "../results/table1_descriptive.csv", row.names=FALSE)
-write.csv(comparison_aic, "../results/table2_aic.csv", row.names=FALSE)
-write.csv(comparison_ski, "../results/table3_seasonality.csv", row.names=FALSE)
-
-cat("✓ Comparison tables exported to CSV:\n")
-cat("  - ../results/table1_descriptive.csv\n")
-cat("  - ../results/table2_aic.csv\n")
-cat("  - ../results/table3_seasonality.csv\n\n")
-
-# Export individual period results as separate CSV files
-for (period_name in names(results)) {
-  
-  # Extract coefficients from best model (SDM)
-  period_data <- results[[period_name]]
-  sdm_summary <- summary(period_data$sdm)
-  
-  # Coefficients table
-  coef_table <- as.data.frame(sdm_summary$Coef)
-  coef_table$Variable <- rownames(coef_table)
-  coef_table <- coef_table[, c("Variable", "Estimate", "Std. Error", "z value", "Pr(>|z|)")]
-  
-  # Impacts table
-  imp_summary <- summary(period_data$impacts_sdm, zstats = TRUE)
-  impacts_table <- data.frame(
-    Variable = rownames(imp_summary$mat),
-    Direct = imp_summary$mat[, "Direct"],
-    Indirect = imp_summary$mat[, "Indirect"],
-    Total = imp_summary$mat[, "Total"],
-    Direct_pval = imp_summary$pzmat[, "Direct"],
-    Indirect_pval = imp_summary$pzmat[, "Indirect"],
-    Total_pval = imp_summary$pzmat[, "Total"]
-  )
-  
-  # Save to CSV
-  write.csv(coef_table, 
-            paste0("../results/", period_name, "_sdm_coefficients.csv"), 
-            row.names = FALSE)
-  write.csv(impacts_table, 
-            paste0("../results/", period_name, "_sdm_impacts.csv"), 
-            row.names = FALSE)
-  
-  cat(paste0("✓ Exported ", period_name, " results:\n"))
-  cat(paste0("  - ../results/", period_name, "_sdm_coefficients.csv\n"))
-  cat(paste0("  - ../results/", period_name, "_sdm_impacts.csv\n"))
-}
-
-cat("\n========================================\n")
-cat("ANALYSIS COMPLETE\n")
-cat("========================================\n")
-cat("All results saved to ../results/ folder for cross-period comparison\n")
+print("\n========================================")
+print("ANALYSIS COMPLETED SUCCESSFULLY")
+print("========================================")
+print("Theoretical Framework Applied (Rosen 1974, Elhorst 2010)")
+print("Spatial Dependence Confirmed (Moran's I, LM tests)")
+print(paste("Best Model Selected:", best_model_name))
+print("Elhorst 7-Step Strategy Implemented")
+print("========================================\n")
