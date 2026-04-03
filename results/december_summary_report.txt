@@ -1,0 +1,144 @@
+=============================================================================
+SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB - DECEMBER
+=============================================================================
+
+1. FINAL MODEL SELECTED: SDM 
+
+
+Call:
+lagsarlm(formula = formula_final, data = df, listw = listw, Durbin = durbin_vars)
+
+Residuals:
+      Min        1Q    Median        3Q       Max 
+-2.667582 -0.313392 -0.032444  0.272026  2.467449 
+
+Type: mixed 
+Coefficients: (asymptotic standard errors) 
+                       Estimate  Std. Error  z value  Pr(>|z|)
+(Intercept)          2.21728044  0.11984843  18.5007 < 2.2e-16
+is_private_room     -0.03014064  0.02376409  -1.2683 0.2046812
+is_shared_room      -0.16470699  0.48538852  -0.3393 0.7343610
+is_hotel_room        0.27490548  0.13048230   2.1068 0.0351314
+accommodates         0.10689123  0.00370260  28.8693 < 2.2e-16
+n_reviews           -0.00179483  0.00016770 -10.7023 < 2.2e-16
+dist_center         -0.00457009  0.00364409  -1.2541 0.2098013
+dist_ski            -0.00933203  0.00161344  -5.7839 7.297e-09
+dist_lake           -0.00065209  0.00086576  -0.7532 0.4513255
+dist_castle          0.00665544  0.00169736   3.9211 8.816e-05
+dist_museum         -0.00782293  0.00322589  -2.4250 0.0153066
+dist_restaurant     -0.03068328  0.01485397  -2.0657 0.0388605
+dist_supermarket     0.01264952  0.00855157   1.4792 0.1390856
+lag.is_private_room -0.19987204  0.05708709  -3.5012 0.0004632
+lag.is_shared_room   0.20260251  1.89809760   0.1067 0.9149954
+lag.is_hotel_room    0.51664823  0.50888881   1.0152 0.3099877
+lag.accommodates    -0.05393927  0.01209242  -4.4606 8.174e-06
+lag.n_reviews        0.00150380  0.00052304   2.8751 0.0040389
+
+Rho: 0.52518, LR test value: 454.96, p-value: < 2.22e-16
+Asymptotic standard error: 0.022075
+    z-value: 23.791, p-value: < 2.22e-16
+Wald statistic: 566.01, p-value: < 2.22e-16
+
+Log likelihood: -4017.107 for mixed model
+ML residual variance (sigma squared): 0.23459, (sigma: 0.48435)
+Number of observations: 5710 
+Number of parameters estimated: 20 
+AIC: 8074.2, (AIC for lm: 8527.2)
+LM test for residual autocorrelation
+test value: 4.6007, p-value: 0.031959
+
+
+2. SPATIAL IMPACTS (Direct, Indirect, Total)
+
+Impact measures (mixed, exact):
+                              Direct      Indirect        Total
+is_private_room dy/dx  -0.0398011909 -0.4446233984 -0.484424589
+is_shared_room dy/dx   -0.1595072052  0.2393181316  0.079810926
+is_hotel_room dy/dx     0.3045105388  1.3625630576  1.667073596
+accommodates dy/dx      0.1069896854  0.0045312533  0.111520939
+n_reviews dy/dx        -0.0017696954  0.0011567644 -0.000612931
+dist_center dy/dx      -0.0046775859 -0.0049473823 -0.009624968
+dist_ski dy/dx         -0.0095515346 -0.0101024533 -0.019653988
+dist_lake dy/dx        -0.0006674321 -0.0007059286 -0.001373361
+dist_castle dy/dx       0.0068119848  0.0072048902  0.014016875
+dist_museum dy/dx      -0.0080069376 -0.0084687662 -0.016475704
+dist_restaurant dy/dx  -0.0314049862 -0.0332163805 -0.064621367
+dist_supermarket dy/dx  0.0129470481  0.0136938151  0.026640863
+========================================================
+Simulation results ( variance matrix):
+========================================================
+Simulated standard errors
+                             Direct     Indirect       Total
+is_private_room dy/dx  0.0285211459 0.1196702934 0.121495687
+is_shared_room dy/dx   0.4927479351 3.8024866925 4.001178535
+is_hotel_room dy/dx    0.1478923612 1.0296517179 1.073016339
+accommodates dy/dx     0.0039727803 0.0251883699 0.026178362
+n_reviews dy/dx        0.0001699640 0.0010576775 0.001076823
+dist_center dy/dx      0.0033981348 0.0036696731 0.007045282
+dist_ski dy/dx         0.0016189566 0.0018231304 0.003335877
+dist_lake dy/dx        0.0008774593 0.0009528394 0.001827574
+dist_castle dy/dx      0.0016982835 0.0017736104 0.003405410
+dist_museum dy/dx      0.0036426486 0.0038707161 0.007467771
+dist_restaurant dy/dx  0.0139340462 0.0151979711 0.028958972
+dist_supermarket dy/dx 0.0078922318 0.0084492505 0.016246624
+
+Simulated z-values:
+                            Direct   Indirect      Total
+is_private_room dy/dx   -1.4287815 -3.6026699 -3.8839490
+is_shared_room dy/dx    -0.2549825  0.2114639  0.1695617
+is_hotel_room dy/dx      2.0256402  1.2805681  1.5080068
+accommodates dy/dx      26.8309085  0.2483478  4.3107655
+n_reviews dy/dx        -10.2497392  1.0203374 -0.6156061
+dist_center dy/dx       -1.3021245 -1.2825103 -1.2960714
+dist_ski dy/dx          -5.7620636 -5.4677303 -5.7846613
+dist_lake dy/dx         -0.6456774 -0.6353775 -0.6412699
+dist_castle dy/dx        3.8878762  3.9760235  4.0096889
+dist_museum dy/dx       -2.1760392 -2.1828265 -2.1928428
+dist_restaurant dy/dx   -2.2838232 -2.2380783 -2.2734629
+dist_supermarket dy/dx   1.8271033  1.8279312  1.8382017
+
+Simulated p-values:
+                       Direct     Indirect   Total     
+is_private_room dy/dx  0.15306705 0.00031497 0.00010277
+is_shared_room dy/dx   0.79873664 0.83252529 0.86535485
+is_hotel_room dy/dx    0.04280167 0.20034540 0.13155280
+accommodates dy/dx     < 2.22e-16 0.80386531 1.6269e-05
+n_reviews dy/dx        < 2.22e-16 0.30756849 0.53815453
+dist_center dy/dx      0.19287382 0.19966368 0.19495089
+dist_ski dy/dx         8.3092e-09 4.5583e-08 7.2659e-09
+dist_lake dy/dx        0.51848832 0.52518225 0.52134733
+dist_castle dy/dx      0.00010113 7.0077e-05 6.0799e-05
+dist_museum dy/dx      0.02955233 0.02904859 0.02831871
+dist_restaurant dy/dx  0.02238192 0.02521595 0.02299830
+dist_supermarket dy/dx 0.06768423 0.06755987 0.06603269
+
+3. MODEL COMPARISON (AIC)
+
+  Model      AIC
+5   SDM 8074.214
+6  SDEM 8074.733
+3   SEM 8084.117
+2   SAR 8099.183
+4   SLX 8527.172
+1   OLS 8569.820
+
+4. MORAN'S I OLS RESIDUALS TEST
+
+
+	Global Moran I for regression residuals
+
+data:  
+model: lm(formula = log_price ~ is_private_room + is_shared_room +
+is_hotel_room + accommodates + n_reviews + dist_center + dist_ski +
+dist_lake + dist_castle + dist_museum + dist_restaurant +
+dist_supermarket, data = df)
+weights: listw
+
+Moran I statistic standard deviate = 32.146, p-value < 2.2e-16
+alternative hypothesis: greater
+sample estimates:
+Observed Moran I      Expectation         Variance 
+    1.419861e-01    -1.245064e-03     1.985286e-05 
+
+
+=============================================================================

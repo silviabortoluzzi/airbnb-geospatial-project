@@ -10,12 +10,16 @@ import re
 CRS_METRIC = "EPSG:32632" # UTM Zone 32N is standard metric projection for Italy
 REGION_NAME = "Trentino-Alto Adige/Südtirol, Italy"
 INPUT_BASE_DIR = "../datasets/airbnb-datasets"
-PERIODS = ["december", "june", "march", "september"]
+PERIODS = ["december"] #alternatives: "june", "march", "september"
 OUTPUT_DIR = "../datasets"
 OUTPUT_FILENAME = "trentino_listings_maps.csv" 
 
+# Create the cache directory for the visualization notebook
+cache_dir = os.path.join(OUTPUT_DIR, "osm_poi_cache")
+os.makedirs(cache_dir, exist_ok=True)
 
 ox.settings.use_cache = True # cache responses speeds up re-runs
+ox.settings.cache_folder = os.path.join(OUTPUT_DIR, "cache_osm_all")
 
 def parse_bathrooms(text):
     """Extract number from bathrooms_text (e.g., '2 baths' -> 2.0, '1 shared bath' -> 1.0, 'Half-bath' -> 0.5)"""
@@ -36,8 +40,7 @@ def main():
         os.makedirs(OUTPUT_DIR)
         print(f"Created directory: {OUTPUT_DIR}")
 
-    # LOAD AND CLEAN AIRBNB DATA FROM ALL PERIODS
-    
+    # 1. LOAD AND CLEAN AIRBNB DATA FROM ALL PERIODS
     all_periods_data = []
     
     for period in PERIODS:
@@ -104,8 +107,8 @@ def main():
     gdf_airbnb = gdf_airbnb.to_crs(CRS_METRIC)
     print(f"--> {len(gdf_airbnb)} listings ready for analysis.")
 
-    # 3. DOWNLOAD OPENSTREETMAP DATA
-    
+
+    # 2. DOWNLOAD OPENSTREETMAP DATA
     print("\n DOWNLOADING OSM LAYERS (This may take a few minutes) ")
 
     def download_and_project(tags, layer_name):
@@ -127,9 +130,123 @@ def main():
             print(f"Error downloading {layer_name}: {e}")
             return None
 
-    #  NATURE 
-    geom_ski = download_and_project({"aerialway": ["cable_car", "gondola", "chair_lift"]}, "Ski Lifts")
-    geom_lakes = download_and_project({"natural": "water", "water": "lake"}, "Lakes")
+
+    # ==========================================
+    # CUSTOM FILTERING AND EXPORT FOR SKI LIFTS
+    # ==========================================
+    print("Downloading: Ski Lifts (Custom Filter and Cache Export)...")
+    tags_ski = {
+        'aerialway': ['chair_lift', 'drag_lift', 't-bar', 'j-bar', 'platter', 'rope_tow', 'magic_carpet', 'gondola', 'cable_car']
+    }
+    try:
+        ski_pois = ox.features_from_place(REGION_NAME, tags=tags_ski)
+        if not ski_pois.empty:
+            if 'aerialway' in ski_pois.columns:
+                ski_pois = ski_pois[ski_pois['aerialway'].isin(tags_ski['aerialway'])]
+            
+            # Remove entries that are likely huts/refuges
+            if 'name' in ski_pois.columns:
+                ski_pois = ski_pois[
+                    ~ski_pois['name'].str.contains(r'malga|rifugio', case=False, na=False)
+                ].copy()
+
+            # Export to GPKG for the visualization notebook
+            for col in ski_pois.columns:
+                if ski_pois[col].dtype == object:
+                    ski_pois[col] = ski_pois[col].astype(str)
+            
+            ski_file_path = os.path.join(cache_dir, "ski_lifts.gpkg")
+            ski_pois.to_file(ski_file_path, driver="GPKG")
+            print(f"--> Saved filtered ski lifts to {ski_file_path}")
+
+            # Project and union for spatial distances
+            ski_pois_metric = ski_pois.to_crs(CRS_METRIC)
+            geom_ski = ski_pois_metric[['geometry']].unary_union
+        else:
+            geom_ski = None
+            print("--> WARNING: No data found for Ski Lifts")
+    except Exception as e:
+        print(f"Error downloading Ski Lifts: {e}")
+        geom_ski = None
+
+
+    # ==========================================
+    # CUSTOM FILTERING AND EXPORT FOR TOP LAKES
+    # ==========================================
+    print("Downloading: Top 19 Lakes (Custom Filter and Cache Export)...")
+    tags_lake = {'natural': 'water'}
+    try:
+        lake_pois = ox.features_from_place(REGION_NAME, tags=tags_lake)
+        if not lake_pois.empty:
+            if 'water' in lake_pois.columns:
+                lake_pois = lake_pois[lake_pois['water'].isin(['lake', 'reservoir'])]
+            
+            # Filter by specific tourist lakes
+            target_lakes = [
+                'garda', 'ledro', 'tenno', 'toblino', 'terlago', 'cavedine', 
+                'santa massenza', 'lamar', 'roncone', 'molveno', 'tovel', 
+                'caldonazzo', 'levico', 'lavarone', 'serraia', 'santa colomba', 
+                "cima d'asta", 'welsperg', 'loppio'
+            ]
+            pattern = '|'.join(target_lakes)
+            lake_pois = lake_pois[lake_pois['name'].str.lower().str.contains(pattern, na=False)]
+            lake_pois = lake_pois[lake_pois.geometry.type.isin(['Polygon', 'MultiPolygon'])].copy()
+            
+            # Export to GPKG for the visualization notebook
+            for col in lake_pois.columns:
+                if lake_pois[col].dtype == object:
+                    lake_pois[col] = lake_pois[col].astype(str)
+            
+            lake_file_path = os.path.join(cache_dir, "lakes.gpkg")
+            lake_pois.to_file(lake_file_path, driver="GPKG")
+            print(f"--> Saved strictly filtered lakes to {lake_file_path}")
+            
+            # Project and union for spatial distances
+            lake_pois_metric = lake_pois.to_crs(CRS_METRIC)
+            geom_lakes = lake_pois_metric[['geometry']].unary_union
+        else:
+            geom_lakes = None
+            print("--> WARNING: No data found for Lakes")
+    except Exception as e:
+        print(f"Error downloading Lakes: {e}")
+        geom_lakes = None
+
+
+    # ==========================================
+    # CUSTOM EXPORT FOR CULTURE (Castles & Museums)
+    # ==========================================
+    print("Downloading: Culture Sites (Cache Export)...")
+    tags_culture = {'historic': 'castle', 'tourism': 'museum'}
+    try:
+        culture_pois = ox.features_from_place(REGION_NAME, tags=tags_culture)
+        if not culture_pois.empty:
+            # Export to GPKG for the visualization notebook
+            for col in culture_pois.columns:
+                if culture_pois[col].dtype == object:
+                    culture_pois[col] = culture_pois[col].astype(str)
+                    
+            culture_file_path = os.path.join(cache_dir, "culture_castles_museums.gpkg")
+            culture_pois.to_file(culture_file_path, driver="GPKG")
+            print(f"--> Saved culture sites to {culture_file_path}")
+
+            # Project to metric to calculate distances separately
+            culture_pois_metric = culture_pois.to_crs(CRS_METRIC)
+            
+            # Split castles and museums for the econometric model
+            castles = culture_pois_metric[culture_pois_metric['historic'] == 'castle']
+            museums = culture_pois_metric[culture_pois_metric['tourism'] == 'museum']
+            
+            geom_castles = castles[['geometry']].unary_union if not castles.empty else None
+            geom_museums = museums[['geometry']].unary_union if not museums.empty else None
+        else:
+            geom_castles, geom_museums = None, None
+            print("--> WARNING: No data found for Culture Sites")
+    except Exception as e:
+        print(f"Error downloading Culture Sites: {e}")
+        geom_castles, geom_museums = None, None
+
+
+    #  NATURE (Parks using the standard function)
     geom_parks = download_and_project({"leisure": "park"}, "Parks")
 
     #  TRANSPORT 
@@ -142,13 +259,8 @@ def main():
     geom_bars = download_and_project({"amenity": ["bar", "pub"]}, "Bars & Pubs")
     geom_pharmacies = download_and_project({"amenity": "pharmacy"}, "Pharmacies")
 
-    #  CULTURE 
-    geom_castles = download_and_project({"historic": "castle"}, "Castles")
-    geom_museums = download_and_project({"tourism": "museum"}, "Museums")
-
      
-    # 3B. DOWNLOAD ISTAT ADMINISTRATIVE BOUNDARIES
-    
+    # 3. DOWNLOAD ISTAT ADMINISTRATIVE BOUNDARIES
     print("\n DOWNLOADING MUNICIPALITIES FROM ISTAT (Official Italian Borders) ")
     
     istat_url = 'https://github.com/napo/geospatialcourse2025/raw/refs/heads/main/data/istat_administrative_units_generalized_2025.gpkg'
@@ -162,12 +274,8 @@ def main():
     # Load municipalities layer
     municipalities = gpd.read_file(geopackage_file, layer="municipalities")
 
-    # TEMPORANEO - per vedere le colonne
-    print("Colonne disponibili:", municipalities.columns.tolist())
-    print(municipalities.head(2))
-
     # Filter only Trentino-Alto Adige region (COD_REG = 4)
-    municipalities = municipalities[municipalities['COD_REG'] == 4]  # nota: numero, non stringa
+    municipalities = municipalities[municipalities['COD_REG'] == 4]  # note: number, not string
     
     # Project to metric CRS
     municipalities = municipalities.to_crs(CRS_METRIC)
@@ -179,7 +287,6 @@ def main():
 
      
     # 4. CALCULATE DISTANCES
-    
     print("\n CALCULATING SPATIAL DISTANCES ")
 
     def calc_dist(geom_target, col_name):
@@ -210,7 +317,7 @@ def main():
     # 1. Join Airbnb points to the Municipality polygon they are inside
     gdf_joined = gpd.sjoin(
         gdf_airbnb, 
-        municipalities[['geometry', 'centroid', 'COMUNE', 'PRO_COM']],  # COMUNE invece di 'nome', PRO_COM invece di 'cod_istat'
+        municipalities[['geometry', 'centroid', 'COMUNE', 'PRO_COM']],  # COMUNE instead of 'nome', PRO_COM instead of 'cod_istat'
         how="left", 
         predicate="within"
     )
@@ -221,8 +328,7 @@ def main():
     # 3. Fill NaNs (points slightly outside borders) with the mean
     gdf_joined['dist_center'] = gdf_joined['dist_center'].fillna(gdf_joined['dist_center'].mean())
 
-    # EXPORT FINAL DATASET
-
+    # 5. EXPORT FINAL DATASET
     print("\n PREPARING OUTPUT ")
 
     # Create clean DataFrame for R (No geometries)
