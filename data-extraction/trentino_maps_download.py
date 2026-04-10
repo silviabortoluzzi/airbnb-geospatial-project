@@ -8,7 +8,7 @@ import re
 
 # CONFIGURATION
 CRS_METRIC = "EPSG:32632" # UTM Zone 32N is standard metric projection for Italy
-REGION_NAME = "Trentino-Alto Adige/Südtirol, Italy"
+REGION_NAME = "Provincia di Trento, Italy"
 INPUT_BASE_DIR = "../datasets/airbnb-datasets"
 PERIODS = ["december"] #alternatives: "june", "march", "september"
 OUTPUT_DIR = "../datasets"
@@ -274,9 +274,9 @@ def main():
     # Load municipalities layer
     municipalities = gpd.read_file(geopackage_file, layer="municipalities")
 
-    # Filter only Trentino-Alto Adige region (COD_REG = 4)
-    municipalities = municipalities[municipalities['COD_REG'] == 4]  # note: number, not string
-    
+    # Filter only Provincia di Trento (COD_PROV = 22)
+    municipalities = municipalities[municipalities['COD_PROV'] == 22]  
+
     # Project to metric CRS
     municipalities = municipalities.to_crs(CRS_METRIC)
     
