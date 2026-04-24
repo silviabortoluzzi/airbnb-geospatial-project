@@ -69,48 +69,48 @@ Simulation results ( variance matrix):
 ========================================================
 Simulated standard errors
                              Direct     Indirect       Total
-is_private_room dy/dx  0.0226601912 0.1118434505 0.111372608
-is_shared_room dy/dx   0.5502584361 4.3818381454 4.590553963
-is_hotel_room dy/dx    0.1433364273 0.9324677212 0.953206410
-accommodates dy/dx     0.0033975246 0.0252051771 0.025857822
-n_reviews dy/dx        0.0001763621 0.0010612258 0.001095901
-dist_center dy/dx      0.0037846275 0.0039816193 0.007751656
-dist_ski dy/dx         0.0016455517 0.0015275355 0.003064711
-dist_lake dy/dx        0.0009018245 0.0009546274 0.001853262
-dist_castle dy/dx      0.0014450482 0.0015742523 0.002959543
-dist_museum dy/dx      0.0030566269 0.0031123113 0.006126822
-dist_restaurant dy/dx  0.0147658629 0.0155060006 0.030138461
-dist_supermarket dy/dx 0.0090741672 0.0094443701 0.018478510
+is_private_room dy/dx  0.0233399032 0.1081762443 0.112802960
+is_shared_room dy/dx   0.4982840543 3.7430293920 3.873245508
+is_hotel_room dy/dx    0.1238774525 0.9846439043 1.002171388
+accommodates dy/dx     0.0036172632 0.0251321906 0.025705989
+n_reviews dy/dx        0.0001613011 0.0010588640 0.001086783
+dist_center dy/dx      0.0038797725 0.0041748393 0.008040314
+dist_ski dy/dx         0.0015795026 0.0016218008 0.003078411
+dist_lake dy/dx        0.0009118700 0.0009667326 0.001876704
+dist_castle dy/dx      0.0018881570 0.0021132293 0.003957595
+dist_museum dy/dx      0.0027746318 0.0030452717 0.005770355
+dist_restaurant dy/dx  0.0184779284 0.0200160565 0.038364549
+dist_supermarket dy/dx 0.0091744490 0.0098846467 0.019012152
 
 Simulated z-values:
-                           Direct    Indirect       Total
-is_private_room dy/dx  -1.7586730 -3.86215104 -4.23630344
-is_shared_room dy/dx   -0.2398819 -0.05099643 -0.07743186
-is_hotel_room dy/dx     2.2277192  1.50875925  1.81092216
-accommodates dy/dx     31.6405784  0.29874235  4.44853775
-n_reviews dy/dx        -9.9743350  1.16914880 -0.47300214
-dist_center dy/dx      -1.1707856 -1.17142852 -1.17331953
-dist_ski dy/dx         -5.8364139 -6.49662618 -6.37187154
-dist_lake dy/dx        -0.7352842 -0.72568301 -0.73160418
-dist_castle dy/dx       4.7831664  4.56144219  4.76180457
-dist_museum dy/dx      -2.6758585 -2.71549320 -2.71438605
-dist_restaurant dy/dx  -2.0148591 -1.99379337 -2.01293936
-dist_supermarket dy/dx  1.2351360  1.22593976  1.23311130
+                            Direct    Indirect       Total
+is_private_room dy/dx   -1.5846123 -4.19871076 -4.35436674
+is_shared_room dy/dx    -0.4749427 -0.02280006 -0.08313382
+is_hotel_room dy/dx      2.5406071  1.25925752  1.55127575
+accommodates dy/dx      29.7063023  0.12432367  4.30172282
+n_reviews dy/dx        -11.0564801  1.08046928 -0.58829876
+dist_center dy/dx       -1.0388194 -1.02356090 -1.03274395
+dist_ski dy/dx          -6.0264391 -6.18565718 -6.35089969
+dist_lake dy/dx         -0.6829494 -0.69486818 -0.68977998
+dist_castle dy/dx        3.5436905  3.35507453  3.48218686
+dist_museum dy/dx       -2.7348569 -2.63771726 -2.70707549
+dist_restaurant dy/dx   -1.7074601 -1.67702644 -1.69734257
+dist_supermarket dy/dx   1.4826158  1.46112164  1.47510149
 
 Simulated p-values:
                        Direct     Indirect   Total     
-is_private_room dy/dx  0.0786331  0.00011239 2.2723e-05
-is_shared_room dy/dx   0.8104218  0.95932836 0.9382800 
-is_hotel_room dy/dx    0.0258992  0.13136032 0.0701529 
-accommodates dy/dx     < 2.22e-16 0.76513664 8.6457e-06
-n_reviews dy/dx        < 2.22e-16 0.24234369 0.6362117 
-dist_center dy/dx      0.2416850  0.24142657 0.2406677 
-dist_ski dy/dx         5.3336e-09 8.2141e-11 1.8674e-10
-dist_lake dy/dx        0.4621664  0.46803312 0.4644102 
-dist_castle dy/dx      1.7256e-06 5.0803e-06 1.9187e-06
-dist_museum dy/dx      0.0074538  0.00661771 0.0066399 
-dist_restaurant dy/dx  0.0439194  0.04617464 0.0441210 
-dist_supermarket dy/dx 0.2167799  0.22022134 0.2175342 
+is_private_room dy/dx  0.11305445 2.6844e-05 1.3345e-05
+is_shared_room dy/dx   0.63482778 0.98180976 0.93374513
+is_hotel_room dy/dx    0.01106602 0.20793733 0.12083562
+accommodates dy/dx     < 2.22e-16 0.90105900 1.6948e-05
+n_reviews dy/dx        < 2.22e-16 0.27993326 0.55633178
+dist_center dy/dx      0.29888875 0.30604272 0.30172374
+dist_ski dy/dx         1.6761e-09 6.1844e-10 2.1406e-10
+dist_lake dy/dx        0.49463885 0.48713792 0.49033256
+dist_castle dy/dx      0.00039457 0.00079344 0.00049734
+dist_museum dy/dx      0.00624074 0.00834661 0.00678788
+dist_restaurant dy/dx  0.08773656 0.09353731 0.08963191
+dist_supermarket dy/dx 0.13817652 0.14398206 0.14018526
 
 3. MODEL COMPARISON (AIC)
 

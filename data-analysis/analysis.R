@@ -114,8 +114,6 @@ pct_duplicates <- round(n_duplicates/nrow(df)*100, 2)
 
 print(paste("Duplicate coordinates found:", n_duplicates, "(", pct_duplicates, "%)"))
 
-# The analysis detected 454 observations (5.93%) with duplicated coordinates compared to previous observations, for a total of 697 listings (9.1%) involved in duplicate groups. 
-# This pattern is attributable to Airbnb's practice of applying systematic offsets for privacy and the presence of multi-unit buildings.
 
 # JITTERING: Add small random noise if duplicates > 5%
 if (pct_duplicates > 5) {
@@ -160,6 +158,27 @@ moran.plot(df$log_price, listw, labels=FALSE,
            xlab="Log Price", 
            ylab="Spatially Lagged Log Price",
            main="Moran Scatterplot - Spatial Clustering")
+
+# Local Indicators of Spatial Association (LISA)
+print("--- Local Indicators of Spatial Association (LISA) ---")
+
+# compute local Moran's I with permutation test for significance
+set.seed(123)
+local_moran <- localmoran_perm(df$log_price, listw, nsim = 999)
+
+df$lisa_pvalue <- local_moran[, "Pr(z != E(Ii)) Sim"]
+
+pz <- scale(df$log_price)
+w_pz <- lag.listw(listw, pz)
+
+df$quadrant <- "Not Significant"
+df$quadrant[pz > 0 & w_pz > 0 & df$lisa_pvalue <= 0.05] <- "High-High"
+df$quadrant[pz < 0 & w_pz < 0 & df$lisa_pvalue <= 0.05] <- "Low-Low"
+df$quadrant[pz > 0 & w_pz < 0 & df$lisa_pvalue <= 0.05] <- "High-Low"
+df$quadrant[pz < 0 & w_pz > 0 & df$lisa_pvalue <= 0.05] <- "Low-High"
+
+df$quadrant <- as.factor(df$quadrant)
+print("computed LISA quadrants with permutation-based significance")
 
 # Moran's I on OLS Residuals (Section 3.1)
 print("--- Moran's I Test on OLS Residuals ---")
@@ -468,6 +487,23 @@ moran.plot(df$log_price, listw, labels=FALSE,
            xlab="Log Price", 
            ylab="Spatially Lagged Log Price",
            main="Moran Scatterplot - Spatial Clustering")
+
+# lisa map
+library(ggplot2)
+lisa_plot <- ggplot(df, aes(x = long, y = lat, color = quadrant)) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  scale_color_manual(values = c("High-High" = "red", 
+                                  "Low-Low" = "blue", 
+                                  "High-Low" = "pink", 
+                                  "Low-High" = "lightblue", 
+                                  "Not Significant" = "grey80")) + 
+  theme_minimal() +
+  labs(title = "LISA Cluster Map: Airbnb Price Hot-Spots",
+       subtitle = "Significant clusters (p-value <= 0.05) in Trentino",
+       color = "Cluster Type") +
+  coord_fixed(1.3)
+
+print(lisa_plot) 
 
 # Plot Residuals of the winning model vs Fitted values
 # Best models from spatialreg store residuals and fitted.values slightly differently occasionally,
