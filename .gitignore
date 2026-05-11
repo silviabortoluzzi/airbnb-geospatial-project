@@ -1,3 +1,3 @@
-visualization/cache 
-inspo
-datasets
+datasets/osm_poi_cache/
+datasets/cache_osm_all/
+datasets/maps/

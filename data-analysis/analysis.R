@@ -1,7 +1,5 @@
-# =============================================================================
-# SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB
-# Theory-Driven Approach Following Elhorst (2010) Strategy
-# =============================================================================
+## SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB
+
 
 # SETUP & LIBRARIES
 rm(list = ls())
@@ -10,10 +8,8 @@ rm(list = ls())
 print(paste("Current working directory:", getwd()))
 
 # Set working directory to project root
-# Adjust the path to your system
+# Adjust the path to  system
 setwd("C:/Users/borto/Desktop/unitn/geospatial/geospatial-project")
-
-# Verify
 print(paste("New working directory:", getwd()))
 
 # Now load data
@@ -30,11 +26,20 @@ ensure_package("spdep")
 ensure_package("spatialreg")
 ensure_package("dplyr")
 
-print("--- LIBRARIES LOADED SUCCESSFULLY ---")
+#  geodata for administrative boundaries
+ensure_package("geodata")
+ensure_package("sf")
 
-# =============================================================================
+# municipalities level 3
+# province level=2
+italy_map <- gadm(country="ITA", level=3, path="datasets/maps")
+trentino_map <- st_as_sf(italy_map) %>% filter(NAME_2 == "Trento")
+
+trentino_map <- st_transform(trentino_map, crs = 4326)
+
+
 # DATA LOADING & PREPARATION
-# =============================================================================
+
 
 # Convert categorical variables into explicit numerical dummies
 # "Entire home/apt" is kept as the baseline reference category to avoid multicollinearity
@@ -43,7 +48,6 @@ df$is_shared_room <- ifelse(df$room_type == "Shared room", 1, 0)
 df$is_hotel_room <- ifelse(df$room_type == "Hotel room", 1, 0)
 
 # Rescale distances from meters to kilometers
-# (Section 4.4: Interpretation as "% price change per 1 km")
 vars_dist <- grep("dist_", names(df), value = TRUE)
 for(v in vars_dist) {
   df[[v]] <- df[[v]] / 1000
@@ -55,41 +59,25 @@ df <- na.omit(df)
 df <- df[df$period == "december", ]
 print(paste("Data Loaded. After december filter:", nrow(df), "observations"))
 
-# =============================================================================
-# THEORY-BASED MODEL SPECIFICATION (Section 4.1-4.4)
-# =============================================================================
 
-print("--- STEP 1: THEORETICALLY-DRIVEN VARIABLE SELECTION ---")
-print("Theoretical Framework: Hedonic Pricing + Spatial Dependence")
-print("References: Rosen (1974), Tobler, Elhorst (2010), Torres-Luque (2025)")
+# THEORY-BASED MODEL SPECIFICATION 
 
-# Core Model based on Literature Review (Section 2.1-2.3)
+
+print("THEORETICALLY-DRIVEN VARIABLE SELECTION ")
+
+
 model_ols <- lm(log_price ~ 
-                # Structural (Section 4.1)
                 is_private_room + is_shared_room + is_hotel_room + accommodates + 
-                
-                # Reputational (Section 4.2)
                 n_reviews + 
-                
-                # Locational (Section 4.4)
-                # Urban: Monocentricity (Alonso)
                 dist_center + 
-                
-                # Alpine: Ski-Lift Premium (Guest Favorites)
                 dist_ski + 
-                
-                # Lacustrine: Shoreline Premium (Garda studies)
                 dist_lake + 
-                
-                # Cultural: Micro-centralities (Guarini 2026, Smart Cities 2023)
                 dist_castle + dist_museum +
-                
-                # Services: Agglomeration Economies (Section 2.1)
                 dist_restaurant + dist_supermarket,
-                
+        
                 data = df)
 
-print("--- OLS BASELINE MODEL SUMMARY ---")
+print(" OLS BASELINE MODEL SUMMARY ")
 summary(model_ols)
 
 # Residual diagnostics
@@ -97,14 +85,12 @@ par(mfrow=c(2,2))
 plot(model_ols, main="OLS Residual Diagnostics")
 par(mfrow=c(1,1))
 
-# =============================================================================
-# SPATIAL WEIGHTS MATRIX (Section 3.2)
-# =============================================================================
 
-print("--- STEP 2: CREATING SPATIAL WEIGHTS MATRIX (KNN) ---")
-print("Justification: Adaptive to variable density (Section 3.2)")
+# SPATIAL WEIGHTS MATRIX 
 
-k <- 15  # Section 3.2: Justified range 10-20, optimal at k=15
+print("  CREATING SPATIAL WEIGHTS MATRIX (KNN) ")
+
+k <- 15 
 coords <- cbind(df$long, df$lat)
 
 # Check for duplicate coordinates
@@ -117,7 +103,7 @@ print(paste("Duplicate coordinates found:", n_duplicates, "(", pct_duplicates, "
 
 # JITTERING: Add small random noise if duplicates > 5%
 if (pct_duplicates > 5) {
-  print("--- APPLYING JITTERING (duplicate threshold exceeded) ---")
+  print(" APPLYING JITTERING (duplicate threshold exceeded) ")
   set.seed(42)  # Reproducibility
   
   # Add ~15m random noise (appropriate for privacy-shifted Airbnb data)
@@ -141,15 +127,12 @@ nb <- knn2nb(knn)
 listw <- nb2listw(nb, style = "W")  # Row-standardized
 
 print(paste("Spatial Weights Matrix created: k =", k, "(Section 3.2)"))
+# SPATIAL DIAGNOSTICS 
 
-# =============================================================================
-# SPATIAL DIAGNOSTICS (Section 3.1)
-# =============================================================================
-
-print("--- STEP 3: SPATIAL AUTOCORRELATION TESTS ---")
+print("SPATIAL AUTOCORRELATION TESTS ")
 
 # Moran's I on Dependent Variable
-print("--- Moran's I Test on log_price (Global Autocorrelation) ---")
+print(" Moran's I Test on log_price (Global Autocorrelation) ")
 moran_price <- moran.test(df$log_price, listw)
 print(moran_price)
 
@@ -160,44 +143,51 @@ moran.plot(df$log_price, listw, labels=FALSE,
            main="Moran Scatterplot - Spatial Clustering")
 
 # Local Indicators of Spatial Association (LISA)
-print("--- Local Indicators of Spatial Association (LISA) ---")
+print(" Local Indicators of Spatial Association (LISA) ")
 
 # compute local Moran's I with permutation test for significance
 set.seed(123)
 local_moran <- localmoran_perm(df$log_price, listw, nsim = 999)
 
 df$lisa_pvalue <- local_moran[, "Pr(z != E(Ii)) Sim"]
+df$lisa_pvalue_bonf <- p.adjust(df$lisa_pvalue, method = "bonferroni")
 
 pz <- scale(df$log_price)
 w_pz <- lag.listw(listw, pz)
 
+# compute quadrants with standard p-value threshold (p <= 0.05)
 df$quadrant <- "Not Significant"
 df$quadrant[pz > 0 & w_pz > 0 & df$lisa_pvalue <= 0.05] <- "High-High"
 df$quadrant[pz < 0 & w_pz < 0 & df$lisa_pvalue <= 0.05] <- "Low-Low"
 df$quadrant[pz > 0 & w_pz < 0 & df$lisa_pvalue <= 0.05] <- "High-Low"
 df$quadrant[pz < 0 & w_pz > 0 & df$lisa_pvalue <= 0.05] <- "Low-High"
-
 df$quadrant <- as.factor(df$quadrant)
-print("computed LISA quadrants with permutation-based significance")
+
+# compute quadrants with Bonferroni correction (p <= 0.05/number of tests)
+df$quadrant_bonf <- "Not Significant"
+df$quadrant_bonf[pz > 0 & w_pz > 0 & df$lisa_pvalue_bonf <= 0.05] <- "High-High"
+df$quadrant_bonf[pz < 0 & w_pz < 0 & df$lisa_pvalue_bonf <= 0.05] <- "Low-Low"
+df$quadrant_bonf[pz > 0 & w_pz < 0 & df$lisa_pvalue_bonf <= 0.05] <- "High-Low"
+df$quadrant_bonf[pz < 0 & w_pz > 0 & df$lisa_pvalue_bonf <= 0.05] <- "Low-High"
+df$quadrant_bonf <- as.factor(df$quadrant_bonf)
+
+print("computed LISA quadrants (Standard and Bonferroni corrected)")
 
 # Moran's I on OLS Residuals (Section 3.1)
-print("--- Moran's I Test on OLS Residuals ---")
+print(" Moran's I Test on OLS Residuals ")
 print("H0: No spatial autocorrelation (independent residuals)")
 print("H1: Spatial autocorrelation exists (OLS is biased)")
 moran_test <- lm.morantest(model_ols, listw)
 print(moran_test)
 
 if (moran_test$p.value < 0.05) {
-  print("RESULT: Spatial autocorrelation detected (p < 0.05)")
-  print("IMPLICATION: OLS estimates are inefficient/biased")
-  print("ACTION: Proceed with Spatial Regression Models (Section 3.3)")
+  print("Spatial autocorrelation detected (p < 0.05)")
 } else {
-  print("RESULT: No significant spatial autocorrelation")
-  print("NOTE: This is rare in real estate data")
+  print("No significant spatial autocorrelation")
 }
 
-# Lagrange Multiplier Tests (Elhorst Strategy - Section 3.3)
-print("--- STEP 1: Lagrange Multiplier Tests (Elhorst 2010) ---")
+# Lagrange Multiplier Tests
+print("Lagrange Multiplier Tests")
 lm_tests <- lm.RStests(model_ols, listw, test = "all")
 print(lm_tests)
 
@@ -207,17 +197,15 @@ p_err <- lm_tests$RSerr$p.value
 p_rlag <- lm_tests$adjRSlag$p.value  # Robust LM-lag
 p_rerr <- lm_tests$adjRSerr$p.value  # Robust LM-err
 
-print("--- Elhorst (2010) Model Selection Strategy ---")
+print(" Elhorst Model Selection Strategy")
 print(paste("RS-lag p-value:", round(p_lag, 4)))
 print(paste("RS-err p-value:", round(p_err, 4)))
 print(paste("Robust RS-lag p-value:", round(p_rlag, 4)))
 print(paste("Robust RS-err p-value:", round(p_rerr, 4)))
 
-# =============================================================================
-# SPATIAL MODEL ESTIMATION (Elhorst 2010 - 7 Step Strategy)
-# =============================================================================
 
-print("--- STEP 2: ESTIMATING SPATIAL MODELS ---")
+# SPATIAL MODEL ESTIMATION
+print(" ESTIMATING SPATIAL MODELS ")
 
 formula_final <- formula(model_ols)
 
@@ -230,10 +218,10 @@ durbin_vars <- ~ is_private_room + is_shared_room + is_hotel_room + accommodates
 models_file <- "results/spatial_models_december.RData"
 
 if (file.exists(models_file)) {
-  print("Found pre-computed models! Loading them from disk to save time...")
+  print("Found pre-computed models! Loading them from disk to save time")
   load(models_file)
 } else {
-  print("No pre-computed models found. Estimating models (this might take a while)...")
+  print("No pre-computed models found. Estimating models")
 
   # Always estimate SAR, SEM, and SLX for comparison
   print("Estimating SAR (Spatial Lag Model)...")
@@ -245,14 +233,14 @@ if (file.exists(models_file)) {
   print("Estimating SLX (Spatially Lagged X Model)...")
   model_slx <- lmSLX(formula_final, data = df, listw = listw, Durbin = durbin_vars)
   
-  # STEP 2: Estimate SDM if LM tests reject OLS
+  # SEstimate SDM if LM tests reject OLS
   if (p_lag < 0.05 | p_err < 0.05) {
     print("OLS rejected by LM tests → Estimating SDM (most general model)...")
     model_sdm <- lagsarlm(formula_final, data = df, listw = listw, 
                           Durbin = durbin_vars)
     estimate_sdm <- TRUE
   } else {
-    print("OLS not rejected → SDM not needed, will test SLX at Step 7")
+    print("OLS not rejected → SDM not needed, will test SLX afterwards")
     model_sdm <- NULL
     estimate_sdm <- FALSE
   }
@@ -261,7 +249,7 @@ if (file.exists(models_file)) {
   # This avoids breaking the load/save logic down the script
   model_sdem <- NULL
   if (estimate_sdm) {
-    print("Estimating SDEM (Spatial Durbin Error Model) for potential Step 6...")
+    print("Estimating SDEM (Spatial Durbin Error Model)")
     model_sdem <- errorsarlm(formula_final, data = df, listw = listw,
                              Durbin = durbin_vars)
   }
@@ -272,15 +260,13 @@ if (file.exists(models_file)) {
   print("Models saved successfully!")
 }
 
-# =============================================================================
-# STEPS 3-7: MODEL SELECTION (Elhorst 2010 Strategy)
-# =============================================================================
+# MODEL SELECTION 
 
-print("--- STEPS 3-7: Elhorst Model Selection ---")
+print("Elhorst Model Selection")
 
 if (estimate_sdm) {
-  # STEP 3: Likelihood Ratio Tests using anova()
-  print("STEP 3: Likelihood Ratio Tests (LRT)")
+  #  Likelihood Ratio Tests using anova()
+  print(" Likelihood Ratio Tests (LRT)")
   
   lrt_sar <- anova(model_sdm, model_sar)
   lrt_sem <- anova(model_sdm, model_sem)
@@ -294,21 +280,21 @@ if (estimate_sdm) {
   reject_sar <- (p_sdm_sar < 0.05)
   reject_sem <- (p_sdm_sem < 0.05)
   
-  # STEP 4: Both restrictions rejected?
+  # Both restrictions rejected?
   if (reject_sar & reject_sem) {
     best_model_name <- "SDM"
     best_model <- model_sdm
-    print("STEP 4: Both H0 rejected → SDM best describes data")
+    print(" Both H0 rejected → SDM best describes data")
     
-  # STEP 5: Only one restriction rejected
+  # Only one restriction rejected
   } else if (!reject_sar & p_rlag < p_rerr) {
     best_model_name <- "SAR"
     best_model <- model_sar
-    print("STEP 5: SAR restriction not rejected + RLM-lag < RLM-err → SAR preferred")
+    print("SAR restriction not rejected + RLM-lag < RLM-err → SAR preferred")
     
   } else if (!reject_sem & p_rerr < p_rlag) {
-    # STEP 6: Test SDEM
-    print("STEP 6: SEM restriction not rejected. Testing SDEM...")
+    # Test SDEM
+    print(" SEM restriction not rejected. Testing SDEM...")
     # model_sdem is already estimated and loaded from cache if available
     
     lrt_sdem <- anova(model_sdem, model_sem)
@@ -332,8 +318,8 @@ if (estimate_sdm) {
   }
   
 } else {
-  # STEP 7: OLS not rejected - test SLX
-  print("STEP 7: Testing SLX vs OLS...")
+  #  OLS not rejected - test SLX
+  print("Testing SLX vs OLS")
   
   # Test if any WX coefficients are significant
   slx_summary <- summary(model_slx)
@@ -360,11 +346,24 @@ if (estimate_sdm) {
   }
 }
 
-print(paste("\n✓ FINAL MODEL SELECTED:", best_model_name))
+print(paste("\nFINAL MODEL SELECTED:", best_model_name))
 print(summary(best_model))
 
+# moran's test on residuals of the winning model  
+print(" Moran's I Test on SDM Residuals")
+df$res_sdm <- residuals(best_model)
+moran_sdm <- moran.test(df$res_sdm, listw)
+print(moran_sdm)
+   
+if (moran_sdm$p.value > 0.05) {
+  print("No remaining spatial autocorrelation in SDM residuals.")
+  print("The model has successfully captured the spatial dependence.")
+} else {
+  print("WARNING: Some spatial autocorrelation remains. Check model specification.")
+}
+ 
 # Model Comparison Table (AIC)
-print("--- MODEL COMPARISON (AIC) ---")
+print("MODEL COMPARISON (AIC)")
 aic_comparison <- data.frame(
   Model = c("OLS", "SAR", "SEM", "SLX"),
   AIC = c(AIC(model_ols), AIC(model_sar), AIC(model_sem), AIC(model_slx))
@@ -384,11 +383,11 @@ aic_comparison <- aic_comparison[order(aic_comparison$AIC), ]
 print(aic_comparison)
 print(paste("Lowest AIC:", aic_comparison$Model[1]))
 
-# =============================================================================
-# IMPACTS CALCULATION (Section 5 - Spillover Effects)
-# =============================================================================
 
-print("--- CALCULATING SPATIAL IMPACTS ---")
+# IMPACTS CALCULATION 
+
+
+print(" CALCULATING SPATIAL IMPACTS ")
 print("Monte Carlo simulations: R=100 draws")
 
 # Calculate impacts for best model
@@ -403,13 +402,13 @@ if (best_model_name %in% c("SDM", "SAR", "SDEM")) {
   })
   
   if (!is.null(best_impacts)) {
-    print("--- SPATIAL IMPACTS SUMMARY ---")
+    print("SPATIAL IMPACTS SUMMARY")
     print("Direct: Own-property effect")
     print("Indirect: Spillover to neighbors") 
     print("Total: Direct + Indirect")
     print(summary(best_impacts, zstats = TRUE, short = TRUE))
   } else {
-    print("Impacts calculation unavailable - coefficients still valid")
+    print("Impacts calculation unavailable")
   }
   
 } else if (best_model_name == "SLX") {
@@ -421,7 +420,7 @@ if (best_model_name %in% c("SDM", "SAR", "SDEM")) {
   })
   
   if (!is.null(best_impacts)) {
-    print("--- SLX IMPACTS SUMMARY ---")
+    print("SLX IMPACTS SUMMARY")
     print(summary(best_impacts, zstats = TRUE))
   }
   
@@ -429,11 +428,9 @@ if (best_model_name %in% c("SDM", "SAR", "SDEM")) {
   print(paste("No spatial impacts for", best_model_name, "model"))
 }
 
-# =============================================================================
-# EXPORT SUMMARY REPORT & PLOTS
-# =============================================================================
 
-print("--- EXPORTING SUMMARY REPORT AND PLOTS TO 'results/' FOLDER ---")
+# EXPORT SUMMARY REPORT & PLOTS
+print("exporting summary report and diagnostic plots to 'results/' ")
 
 if (!dir.exists("results")) {
   dir.create("results")
@@ -442,15 +439,13 @@ if (!dir.exists("results")) {
 # 1. TEXT REPORT
 report_file <- "results/december_summary_report.txt"
 sink(report_file)
-cat("=============================================================================\n")
-cat("SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB - DECEMBER\n")
-cat("=============================================================================\n\n")
+cat("SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB\n")
 
-cat("1. FINAL MODEL SELECTED:", best_model_name, "\n\n")
+cat("FINAL MODEL SELECTED:", best_model_name, "\n\n")
 print(summary(best_model))
 cat("\n")
 
-cat("2. SPATIAL IMPACTS (Direct, Indirect, Total)\n\n")
+cat("SPATIAL IMPACTS (Direct, Indirect, Total)\n\n")
 if (!is.null(best_impacts)) {
   if (best_model_name == "SLX") {
     print(summary(best_impacts, zstats = TRUE))
@@ -462,22 +457,22 @@ if (!is.null(best_impacts)) {
 }
 cat("\n")
 
-cat("3. MODEL COMPARISON (AIC)\n\n")
+cat(" MODEL COMPARISON (AIC)\n\n")
 print(aic_comparison)
 cat("\n")
 
-cat("4. MORAN'S I OLS RESIDUALS TEST\n\n")
+cat(" MORAN'S I OLS RESIDUALS TEST\n\n")
 print(moran_test)
 
-cat("\n=============================================================================\n")
-sink()
-print(paste("✓ Summary report saved to:", report_file))
 
-# 2. DIAGNOSTIC PLOTS
+sink()
+print(paste("Summary report saved to:", report_file))
+
+# DIAGNOSTIC PLOTS
 plots_file <- "results/december_diagnostic_plots.pdf"
 pdf(plots_file, width = 10, height = 8)
 
-# Baseline OLS diagnostics (4 plots)
+# OLS diagnostics 
 par(mfrow=c(2,2))
 plot(model_ols, main="OLS Model Diagnostics")
 
@@ -488,26 +483,43 @@ moran.plot(df$log_price, listw, labels=FALSE,
            ylab="Spatially Lagged Log Price",
            main="Moran Scatterplot - Spatial Clustering")
 
-# lisa map
-library(ggplot2)
-lisa_plot <- ggplot(df, aes(x = long, y = lat, color = quadrant)) +
-  geom_point(alpha = 0.7, size = 1.5) +
-  scale_color_manual(values = c("High-High" = "red", 
-                                  "Low-Low" = "blue", 
-                                  "High-Low" = "pink", 
-                                  "Low-High" = "lightblue", 
-                                  "Not Significant" = "grey80")) + 
-  theme_minimal() +
-  labs(title = "LISA Cluster Map: Airbnb Price Hot-Spots",
-       subtitle = "Significant clusters (p-value <= 0.05) in Trentino",
-       color = "Cluster Type") +
-  coord_fixed(1.3)
 
-print(lisa_plot) 
+# LISA Map Standard
+library(ggplot2)
+lisa_plot_std <- ggplot() +
+  geom_sf(data = trentino_map, fill = "white", color = "grey85", size = 0.1) +
+  geom_point(data = df, aes(x = long, y = lat, color = quadrant), alpha = 0.7, size = 1.2) +
+  scale_color_manual(values = c("High-High" = "red", 
+                                "Low-Low" = "blue", 
+                                "High-Low" = "pink", 
+                                "Low-High" = "lightblue", 
+                                "Not Significant" = "transparent")) + 
+  theme_minimal() +
+  labs(title = "LISA Cluster Map: Regional Trends",
+       subtitle = "Standard Significance (p-value <= 0.05)",
+       color = "Cluster Type") +
+  coord_sf()
+
+print(lisa_plot_std) 
+
+# LISA Map Bonferroni
+lisa_plot_bonf <- ggplot() +
+  geom_sf(data = trentino_map, fill = "white", color = "grey85", size = 0.1) +
+  geom_point(data = df, aes(x = long, y = lat, color = quadrant_bonf), alpha = 0.7, size = 1.2) +
+  scale_color_manual(values = c("High-High" = "red", 
+                                "Low-Low" = "blue", 
+                                "High-Low" = "pink", 
+                                "Low-High" = "lightblue", 
+                                "Not Significant" = "transparent")) + 
+  theme_minimal() +
+  labs(title = "LISA Cluster Map: Robust Hot-Spots",
+       subtitle = "Bonferroni Corrected Significance",
+       color = "Cluster Type") +
+  coord_sf()
+
+print(lisa_plot_bonf)
 
 # Plot Residuals of the winning model vs Fitted values
-# Best models from spatialreg store residuals and fitted.values slightly differently occasionally,
-# but usually they are accessible directly or via residuals()/fitted():
 bm_res <- residuals(best_model)
 bm_fit <- fitted(best_model)
 
@@ -519,14 +531,118 @@ if (!is.null(bm_res) && !is.null(bm_fit)) {
   abline(h = 0, col = "red", lty = 2, lwd = 2)
 }
 
-dev.off()
-print(paste("✓ Diagnostic plots saved to:", plots_file))
 
-print("\n========================================")
-print("ANALYSIS COMPLETED SUCCESSFULLY")
-print("========================================")
-print("Theoretical Framework Applied (Rosen 1974, Elhorst 2010)")
-print("Spatial Dependence Confirmed (Moran's I, LM tests)")
+#visualize residuals
+ensure_package("patchwork")
+
+# Extract residuals from both models
+df$res_ols <- residuals(model_ols)
+df$res_sdm <- residuals(best_model)
+
+max_res <- max(abs(c(df$res_ols, df$res_sdm)), na.rm = TRUE)
+
+# ols map
+p_ols <- ggplot() +
+  geom_sf(data = trentino_map, fill = "grey95", color = "white", size = 0.1) +
+  geom_point(data = df, aes(x = long, y = lat, color = res_ols), alpha = 0.5, size = 0.5) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red", 
+                        limits = c(-max_res, max_res), 
+                        name = "Residuals") +
+  labs(title = "OLS Residuals") +
+  theme_minimal() + 
+  theme(legend.position = "bottom") +
+  coord_sf()
+
+# sdm map
+p_sdm <- ggplot() +
+  geom_sf(data = trentino_map, fill = "grey95", color = "white", size = 0.1) +
+  geom_point(data = df, aes(x = long, y = lat, color = res_sdm), alpha = 0.5, size = 0.5) +
+  scale_color_gradient2(low = "blue", mid = "white", high = "red", 
+                        limits = c(-max_res, max_res), 
+                        name = "Residuals") +
+  labs(title = "SDM Residuals") +
+  theme_minimal() + 
+  theme(legend.position = "bottom") +
+  coord_sf()
+  
+print(p_ols)
+print(p_sdm)
+#overplotting problem
+
+# Residual difference map (OLS - SDM)
+# Positive values: OLS residual > SDM residual
+# Negative values: SDM residual > OLS residual
+df$res_diff <- df$res_ols - df$res_sdm
+max_diff <- max(abs(df$res_diff), na.rm = TRUE)
+
+p_diff <- ggplot() +
+  geom_sf(data = trentino_map, fill = "grey95", color = "white", size = 0.1) +
+  geom_point(
+    data = df,
+    aes(x = long, y = lat, color = res_diff),
+    alpha = 0.6,
+    size = 0.6
+  ) +
+  scale_color_gradient2(
+    low = "blue",
+    mid = "white",
+    high = "red",
+    midpoint = 0,
+    limits = c(-max_diff, max_diff),
+    name = "Residual difference\n(OLS - SDM)"
+  ) +
+  labs(
+    title = "Residual Difference Map (OLS - SDM)",
+    subtitle = "Positive values indicate larger OLS residuals",
+    x = "Longitude",
+    y = "Latitude"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  coord_sf()
+
+print(p_diff)
+
+ensure_package("hexbin")
+
+print("Generating Hexbin Moran Scatterplots for residuals...")
+
+# Calculate the spatial lag of the residuals using the weights matrix (listw)
+df$lag_res_ols <- lag.listw(listw, df$res_ols)
+df$lag_res_sdm <- lag.listw(listw, df$res_sdm)
+
+# create Hexbin Plot for OLS Residuals 
+plot_ols_hex <- ggplot(df, aes(x = res_ols, y = lag_res_ols)) +
+  geom_hex(bins = 60) +
+  scale_fill_viridis_c(option = "plasma", name = "Density\n(n. listings)") +
+  geom_smooth(method = "lm", color = "red", se = FALSE, linewidth = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  theme_minimal() +
+  labs(title = "Panel A: OLS Residuals Moran Scatterplot",
+       subtitle = "Moran's I = 0.136 (p < 0.001)",
+       x = "OLS Residuals",
+       y = "Spatially Lagged OLS Residuals")
+
+# Create Hexbin Plot for SDM Residuals
+plot_sdm_hex <- ggplot(df, aes(x = res_sdm, y = lag_res_sdm)) +
+  geom_hex(bins = 60) +
+  scale_fill_viridis_c(option = "plasma", name = "Density\n(n. listings)") +
+  geom_smooth(method = "lm", color = "red", se = FALSE, linewidth = 1.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  theme_minimal() +
+  labs(title = "Panel B: SDM Residuals Moran Scatterplot",
+       subtitle = "Moran's I = 0.004 (p = 0.412) ",
+       x = "SDM Residuals",
+       y = "Spatially Lagged SDM Residuals")
+
+# Combine and print the plots side by side using patchwork
+print(plot_ols_hex)
+print(plot_sdm_hex)
+
+
+dev.off()
+print(paste("Diagnostic plots saved to:", plots_file))
 print(paste("Best Model Selected:", best_model_name))
-print("Elhorst 7-Step Strategy Implemented")
-print("========================================\n")
+print("Analysis Completed")

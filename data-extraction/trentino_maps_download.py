@@ -10,7 +10,7 @@ import re
 CRS_METRIC = "EPSG:32632" # UTM Zone 32N is standard metric projection for Italy
 REGION_NAME = "Provincia di Trento, Italy"
 INPUT_BASE_DIR = "../datasets/airbnb-datasets"
-PERIODS = ["december"] #alternatives: "june", "march", "september"
+PERIODS = ["december"] #alternatives: "june", "march", "september" #allows for more periods to be added if needed 
 OUTPUT_DIR = "../datasets"
 OUTPUT_FILENAME = "trentino_listings_maps.csv" 
 
@@ -49,27 +49,21 @@ def main():
 
         try:
             df = pd.read_csv(INPUT_FILE, compression='gzip')
-            
-            # Add period column
+        
             df['period'] = period
             
-            # Basic Cleaning
-            # Convert price from string "$100.00" to numeric
+            # cleaning price column: remove $ and commas, convert to float
             df['price'] = df['price'].replace('[\$,]', '', regex=True).astype(float)
 
-            # Filter out price errors (0) and extreme luxury outliers (> 2000)
+            # Filter out price errors (0) and extreme luxury outliers 
             df = df[(df.price > 0) & (df.price < 2000)]
-            
-            # Cap outliers at 99th percentile
             p99 = df['price'].quantile(0.99)
             df['price_capped'] = df['price'].clip(upper=p99)
             df['log_price_capped'] = np.log(df['price_capped'])
             print(f"99th percentile for {period}: ${p99:.2f}")
             
-            # Parse bathrooms_text to numeric
+            # other cleaning 
             df['bathrooms'] = df['bathrooms_text'].apply(parse_bathrooms)
-            
-            # Convert host_is_superhost to binary (t/f -> 1/0)
             df['host_is_superhost'] = df['host_is_superhost'].map({'t': 1, 'f': 0})
             
             # Select columns relevant for Hedonic Pricing Model
@@ -108,7 +102,7 @@ def main():
     print(f"--> {len(gdf_airbnb)} listings ready for analysis.")
 
 
-    # 2. DOWNLOAD OPENSTREETMAP DATA
+    # download openstreet data
     print("\n DOWNLOADING OSM LAYERS (This may take a few minutes) ")
 
     def download_and_project(tags, layer_name):
@@ -124,16 +118,14 @@ def main():
                 return None
             
             gdf = gdf.to_crs(CRS_METRIC)
-            # unary_union merges all shapes into one object (optimizes distance calc)
+       
             return gdf[['geometry']].unary_union 
         except Exception as e:
             print(f"Error downloading {layer_name}: {e}")
             return None
 
 
-    # ==========================================
-    # CUSTOM FILTERING AND EXPORT FOR SKI LIFTS
-    # ==========================================
+#filter for ski lifts 
     print("Downloading: Ski Lifts (Custom Filter and Cache Export)...")
     tags_ski = {
         'aerialway': ['chair_lift', 'drag_lift', 't-bar', 'j-bar', 'platter', 'rope_tow', 'magic_carpet', 'gondola', 'cable_car']
@@ -170,9 +162,7 @@ def main():
         geom_ski = None
 
 
-    # ==========================================
-    # CUSTOM FILTERING AND EXPORT FOR TOP LAKES
-    # ==========================================
+# filter for lakes
     print("Downloading: Top 19 Lakes (Custom Filter and Cache Export)...")
     tags_lake = {'natural': 'water'}
     try:
@@ -212,9 +202,7 @@ def main():
         geom_lakes = None
 
 
-    # ==========================================
-    # CUSTOM EXPORT FOR CULTURE (Castles & Museums)
-    # ==========================================
+   #filters for castels and museums 
     print("Downloading: Culture Sites (Cache Export)...")
     tags_culture = {'historic': 'castle', 'tourism': 'museum'}
     try:
@@ -246,21 +234,21 @@ def main():
         geom_castles, geom_museums = None, None
 
 
-    #  NATURE (Parks using the standard function)
+    # parks
     geom_parks = download_and_project({"leisure": "park"}, "Parks")
 
-    #  TRANSPORT 
+    # transport 
     geom_trains = download_and_project({"railway": "station"}, "Train Stations")
     geom_bus = download_and_project({"highway": "bus_stop"}, "Bus Stops")
 
-    #  SERVICES 
+    # other services 
     geom_supermarkets = download_and_project({"shop": "supermarket"}, "Supermarkets")
     geom_restaurants = download_and_project({"amenity": "restaurant"}, "Restaurants")
     geom_bars = download_and_project({"amenity": ["bar", "pub"]}, "Bars & Pubs")
     geom_pharmacies = download_and_project({"amenity": "pharmacy"}, "Pharmacies")
 
      
-    # 3. DOWNLOAD ISTAT ADMINISTRATIVE BOUNDARIES
+    # DOWNLOAD ISTAT ADMINISTRATIVE BOUNDARIES
     print("\n DOWNLOADING MUNICIPALITIES FROM ISTAT (Official Italian Borders) ")
     
     istat_url = 'https://github.com/napo/geospatialcourse2025/raw/refs/heads/main/data/istat_administrative_units_generalized_2025.gpkg'
@@ -285,8 +273,8 @@ def main():
     
     print(f"--> Loaded {len(municipalities)} municipalities from Trentino-Alto Adige")
 
-     
-    # 4. CALCULATE DISTANCES
+    
+    #distances
     print("\n CALCULATING SPATIAL DISTANCES ")
 
     def calc_dist(geom_target, col_name):
@@ -314,24 +302,24 @@ def main():
     #  Special Calculation: Distance to Municipality Center 
     print("...calculating distance to Municipality Center (Spatial Join)")
     
-    # 1. Join Airbnb points to the Municipality polygon they are inside
+    # Join Airbnb points to the Municipality polygon they are inside
     gdf_joined = gpd.sjoin(
         gdf_airbnb, 
-        municipalities[['geometry', 'centroid', 'COMUNE', 'PRO_COM']],  # COMUNE instead of 'nome', PRO_COM instead of 'cod_istat'
+        municipalities[['geometry', 'centroid', 'COMUNE', 'PRO_COM']], 
         how="left", 
         predicate="within"
     )
     
-    # 2. Calculate distance from the Airbnb to the centroid of ITS municipality
+    # Calculate distance from the Airbnb to the centroid of ITS municipality
     gdf_joined['dist_center'] = gdf_joined.geometry.distance(gdf_joined['centroid'])
     
-    # 3. Fill NaNs (points slightly outside borders) with the mean
+    # Fill NaNs (points slightly outside borders) with the mean
     gdf_joined['dist_center'] = gdf_joined['dist_center'].fillna(gdf_joined['dist_center'].mean())
 
-    # 5. EXPORT FINAL DATASET
+    # EXPORT FINAL DATASET
     print("\n PREPARING OUTPUT ")
 
-    # Create clean DataFrame for R (No geometries)
+    # Create clean DataFrame 
     df_export = pd.DataFrame({
         'id': gdf_joined['id'],
         'price': gdf_joined['price'],
