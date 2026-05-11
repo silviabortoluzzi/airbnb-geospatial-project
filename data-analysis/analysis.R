@@ -1,18 +1,15 @@
 ## SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB
 
-
-# SETUP & LIBRARIES
 rm(list = ls())
 
 # Check current working directory
 print(paste("Current working directory:", getwd()))
 
 # Set working directory to project root
-# Adjust the path to  system
 setwd("C:/Users/borto/Desktop/unitn/geospatial/geospatial-project")
 print(paste("New working directory:", getwd()))
 
-# Now load data
+#  load data
 df <- read.csv("datasets/trentino_listings_maps.csv")
 
 ensure_package <- function(pkg) {
@@ -233,7 +230,7 @@ if (file.exists(models_file)) {
   print("Estimating SLX (Spatially Lagged X Model)...")
   model_slx <- lmSLX(formula_final, data = df, listw = listw, Durbin = durbin_vars)
   
-  # SEstimate SDM if LM tests reject OLS
+  # Estimate SDM if LM tests reject OLS
   if (p_lag < 0.05 | p_err < 0.05) {
     print("OLS rejected by LM tests → Estimating SDM (most general model)...")
     model_sdm <- lagsarlm(formula_final, data = df, listw = listw, 
@@ -429,14 +426,14 @@ if (best_model_name %in% c("SDM", "SAR", "SDEM")) {
 }
 
 
-# EXPORT SUMMARY REPORT & PLOTS
+# export summary and plot
 print("exporting summary report and diagnostic plots to 'results/' ")
 
 if (!dir.exists("results")) {
   dir.create("results")
 }
 
-# 1. TEXT REPORT
+# report 
 report_file <- "results/december_summary_report.txt"
 sink(report_file)
 cat("SPATIAL HEDONIC PRICING MODEL - TRENTINO AIRBNB\n")
@@ -468,7 +465,7 @@ print(moran_test)
 sink()
 print(paste("Summary report saved to:", report_file))
 
-# DIAGNOSTIC PLOTS
+# export diagnostic plots
 plots_file <- "results/december_diagnostic_plots.pdf"
 pdf(plots_file, width = 10, height = 8)
 
@@ -637,7 +634,7 @@ plot_sdm_hex <- ggplot(df, aes(x = res_sdm, y = lag_res_sdm)) +
        x = "SDM Residuals",
        y = "Spatially Lagged SDM Residuals")
 
-# Combine and print the plots side by side using patchwork
+# Combine and print the plots side by side 
 print(plot_ols_hex)
 print(plot_sdm_hex)
 

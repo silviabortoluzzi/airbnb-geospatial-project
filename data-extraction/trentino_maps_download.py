@@ -6,7 +6,7 @@ import os
 import requests
 import re
 
-# CONFIGURATION
+# Configuration
 CRS_METRIC = "EPSG:32632" # UTM Zone 32N is standard metric projection for Italy
 REGION_NAME = "Provincia di Trento, Italy"
 INPUT_BASE_DIR = "../datasets/airbnb-datasets"
@@ -40,7 +40,7 @@ def main():
         os.makedirs(OUTPUT_DIR)
         print(f"Created directory: {OUTPUT_DIR}")
 
-    # 1. LOAD AND CLEAN AIRBNB DATA FROM ALL PERIODS
+    # load and clean Airbnb data for all periods, then combine into one GeoDataFrame
     all_periods_data = []
     
     for period in PERIODS:
