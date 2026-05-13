@@ -54,32 +54,19 @@ pip install -r requirements.txt
 
 ## Interactive Map
 
-The file `results/airbnb_map.html` is a standalone interactive map that can be opened directly in any browser (no server or Python installation required). It covers the entire Province of Trentino and displays 5,710 Airbnb listings scraped in December 2024.
+The file `results/airbnb_map.html` is a interactive map that can be opened directly in any browser. It covers the entire Province of Trentino and displays 5,710 Airbnb listings scraped in December 2024.
 
 ---
 
 ### Navigation
-
-| Action | How |
-|---|---|
-| Pan | Click and drag |
-| Zoom in/out | Scroll wheel, or `+` / `−` buttons (top-left) |
-| Zoom to fit | The map opens already framed on the Province of Trentino |
-
----
-
-### Layer Control Panel
+The map opens already framed on the Province of Trentino. 
 
 In the **top-right corner** there is a panel listing all available layers. Each layer has a **checkbox** that you can tick or untick to show or hide it. Several layers can be active at the same time.
 
-> **Tip:** layers are off by default except the listing price dots — turn them on one at a time to avoid visual clutter.
-
 ---
 
-### Layers
-
 #### Rooms: Entire home/apt · Rooms: Private room · Rooms: Hotel room
-Three separate layers, one per room type. Each listing is represented by a **small coloured circle** on the map. The colour encodes the **nightly price in €**, following a yellow → orange → red gradient (YlOrRd scale, Natural Breaks classification in 5 classes):
+Three separate layers, one per room type. Each listing is represented by a **small coloured circle** on the map. The colour encodes the **nightly price in €**, following a yellow → orange → red gradient:
 
 | Colour | Price range |
 |---|---|
@@ -106,7 +93,7 @@ A continuous **heat map** that shows where listings are most spatially concentra
 ---
 
 #### Mean price by municipality
-A **choropleth map** that colours each municipality polygon according to its average Airbnb nightly price. The colour scale (YlOrRd, Natural Breaks in 7 classes) runs from light yellow (cheapest municipalities) to dark red (most expensive).
+A **choropleth map** that colours each municipality polygon according to its average Airbnb nightly price. The colour scale runs from light yellow (cheapest municipalities) to dark red (most expensive).
 
 **Hover** over any municipality to see:
 - Municipality name
@@ -145,7 +132,7 @@ Points of interest extracted from OpenStreetMap for **castles and museums** acro
 
 ### Legend
 
-The colour legend appears in the **bottom-right corner** and is context-aware:
+The colour legend appears in the corner and is context-aware:
 - When a **Rooms:** layer is active → shows the *Listing price per night (€)* scale
 - When the **Mean price by municipality** layer is active → switches to the *Average Airbnb price by municipality (€)* scale
 - When neither is active → the legend disappears automatically
