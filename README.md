@@ -115,17 +115,17 @@ Individual markers are colour-coded by price tier:
 
 ---
 
-#### OSM: Siti Culturali e Buffer (3km)
-Points of interest extracted from OpenStreetMap for **castles and museums** across the province, each surrounded by a **3 km buffer circle**. Useful for visually assessing how listings relate to cultural heritage sites — and for understanding the counterintuitive positive `dist_castle` coefficient: most castles sit in the valley floors, far from the high-altitude ski clusters.
+#### OSM: Cultural Sites and Buffer (3km)
+Points of interest extracted from OpenStreetMap for **castles and museums** across the province, each surrounded by a **3 km buffer circle**. Useful for visually assessing how listings relate to cultural heritage sites and for understanding the counterintuitive positive `dist_castle` coefficient: most castles sit in the valley floors, far from the high-altitude ski clusters.
 
 ---
 
-#### OSM: Impianti Sciistici e Buffer (3km)
+#### OSM: Ski lifts and Buffer (3km)
 **Ski lift locations** from OpenStreetMap, each with a **3 km buffer circle**. This is the most analytically relevant POI layer: overlaying it with the price dot layers immediately shows how the highest-priced listings (dark red) cluster tightly within or adjacent to the ski lift buffers, visually confirming the model's key finding.
 
 ---
 
-#### OSM: Laghi e Buffer (3km)
+#### OSM: Lakes and Buffer (3km)
 **Selected lakes** (19 lakes with genuine tourist relevance, e.g. Garda, Ledro, Levico), each with a **3 km buffer circle**. Overlaying this layer with the price dots illustrates why `dist_lake` is not significant in winter: lake areas show no consistent price premium during the December season.
 
 ---
