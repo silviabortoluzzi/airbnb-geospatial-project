@@ -9,7 +9,7 @@ Initial Ordinary Least Squares (OLS) estimations yielded highly autocorrelated r
 
 ## Interactive Spatial Analysis Map
 
-[![Trentino Airbnb Interactive Map]](https://silviabortoluzzi.github.io/airbnb-geospatial-project/airbnb_map.html)
+[![Trentino Airbnb Interactive Map]](https://silviabortoluzzi.github.io/airbnb-geospatial-project/results/airbnb_map.html)
 
 <p align="center">
   <em>💡 <b>Click on the map preview above</b> to open the full-screen interactive Leaflet map and explore the Airbnb listings distribution, spatial clusters, and winter resort proximity layers.</em>
